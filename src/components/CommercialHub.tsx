@@ -5,6 +5,19 @@ import { Client, Project, Budget, Contract } from '@/types';
 import { Search, User, Home, Calculator, FileCheck, MapPin, ExternalLink, Calendar, DollarSign, Map as MapIcon, BrainCircuit } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix for Leaflet icons in this component too
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+let DefaultIcon = L.icon({
+    iconUrl: icon,
+    shadowUrl: iconShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
 
 const CommercialHub: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -98,10 +111,20 @@ const CommercialHub: React.FC = () => {
                 </div>
               </div>
               {clientData.client.location && (
-                <div className="mt-6 h-48 bg-slate-100 rounded-xl flex items-center justify-center border border-slate-200">
-                  <div className="text-center">
-                    <MapIcon className="w-8 h-8 text-indigo-400 mx-auto mb-2" />
-                    <p className="text-xs text-slate-500">Ubicación Georeferenciada<br/>{clientData.client.location.lat}, {clientData.client.location.lng}</p>
+                <div className="mt-6 h-64 rounded-xl overflow-hidden border border-slate-200 relative z-0">
+                  <MapContainer
+                    center={[clientData.client.location.lat, clientData.client.location.lng]}
+                    zoom={15}
+                    scrollWheelZoom={false}
+                    dragging={false}
+                    zoomControl={false}
+                    style={{ height: '100%', width: '100%' }}
+                  >
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <Marker position={[clientData.client.location.lat, clientData.client.location.lng]} icon={DefaultIcon} />
+                  </MapContainer>
+                  <div className="absolute bottom-2 left-2 right-2 bg-white/80 backdrop-blur-sm px-2 py-1 rounded text-[10px] text-slate-600 font-mono text-center z-[1000]">
+                    {clientData.client.location.lat.toFixed(4)}, {clientData.client.location.lng.toFixed(4)}
                   </div>
                 </div>
               )}

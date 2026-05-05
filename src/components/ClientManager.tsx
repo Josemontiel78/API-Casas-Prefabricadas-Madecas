@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Client } from '@/types';
 import { getClients, saveClient, deleteClient } from '@/services/db';
-import { Plus, Search, Save, Users, Trash2, Phone, Mail, MapPin } from 'lucide-react';
+import { Plus, Search, Save, Users, Trash2, Phone, Mail, MapPin, Map as MapIcon } from 'lucide-react';
+import MapProjectPicker from '@/components/MapProjectPicker';
 
 const ClientManager: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -100,6 +101,17 @@ const ClientManager: React.FC = () => {
               <input required type="email" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition" 
                 value={formData.correo} onChange={e => setFormData({...formData, correo: e.target.value})} placeholder="correo@ejemplo.com" />
             </div>
+            
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                <MapIcon size={16} className="text-emerald-600" />
+                Ubicación Georeferenciada
+              </label>
+              <MapProjectPicker 
+                initialLocation={formData.location}
+                onLocationSelect={(loc) => setFormData({...formData, location: loc})} 
+              />
+            </div>
           </div>
           <div className="flex justify-end space-x-3 pt-6 border-t border-slate-100">
             <button type="button" onClick={() => setIsEditing(false)} className="px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition">Cancelar</button>
@@ -175,6 +187,11 @@ const ClientManager: React.FC = () => {
               <div className="flex items-center gap-3 text-sm text-slate-600">
                  <MapPin size={14} className="text-slate-400 shrink-0" /> <span className="truncate">{client.domicilio}</span>
               </div>
+              {client.location && (
+                <div className="flex items-center gap-2 mt-2 px-2 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded border border-emerald-100 w-fit">
+                  <MapIcon size={10} /> GEOREFERENCIADO
+                </div>
+              )}
             </div>
           </div>
         ))}
