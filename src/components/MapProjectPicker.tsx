@@ -4,17 +4,22 @@ import { APIProvider, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps
 import { MapPin, Info, Save, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// Access the key through Vite's define replacement or import.meta.env
+// Access the key through multiple possible patterns for maximum compatibility
 const getApiKey = () => {
+  // 1. Try Vite's static replacement (defined in vite.config.ts)
   try {
-    // This string will be replaced by Vite at build time
     const definedKey = process.env.GOOGLE_MAPS_PLATFORM_KEY;
-    if (definedKey && definedKey !== 'undefined' && definedKey !== '') return definedKey;
-  } catch (e) {
-    // Ignore error if process is not defined
-  }
-  
-  return (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY || '';
+    if (definedKey && definedKey !== 'undefined' && definedKey !== '') {
+      return definedKey;
+    }
+  } catch (e) {}
+
+  // 2. Try Vite's standard import.meta.env with VITE_ prefix
+  const metaEnvKey = (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY;
+  if (metaEnvKey && metaEnvKey !== '') return metaEnvKey;
+
+  // 3. Fallback for some specific deployment scenarios
+  return (import.meta as any).env?.GOOGLE_MAPS_PLATFORM_KEY || '';
 };
 
 const API_KEY = getApiKey();
