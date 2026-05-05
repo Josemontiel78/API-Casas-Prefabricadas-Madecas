@@ -1,0 +1,8 @@
+{
+  "name": "PrefabContracts AI",
+  "description": "Intelligent contract management system for prefabricated houses using Google Gemini AI.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
