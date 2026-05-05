@@ -1,14 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
-import Layout from './components/Layout';
-import ClientManager from './components/ClientManager';
-import ProjectManager from './components/ProjectManager';
-import BudgetManager from './components/BudgetManager';
-import ContractManager from './components/ContractManager';
-import Dashboard from './components/Dashboard';
-import AIAssistant from './components/AIAssistant';
-import { seedDatabase } from './services/db';
-import { ViewState, UserRole } from './types';
+import Layout from '@/components/Layout';
+import ClientManager from '@/components/ClientManager';
+import ProjectManager from '@/components/ProjectManager';
+import BudgetManager from '@/components/BudgetManager';
+import ContractManager from '@/components/ContractManager';
+import Dashboard from '@/components/Dashboard';
+import AIAssistant from '@/components/AIAssistant';
+import { seedDatabase } from '@/services/db';
+import { ViewState, UserRole } from '@/types';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
