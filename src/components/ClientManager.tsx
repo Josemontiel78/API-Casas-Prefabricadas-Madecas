@@ -31,7 +31,8 @@ const ClientManager: React.FC = () => {
   const handleNew = () => {
     setFormData({
       id: crypto.randomUUID(),
-      nombre: '', rut: '', domicilio: '', telefono: '', correo: ''
+      nombre: '', rut: '', domicilio: '', telefono: '', correo: '',
+      fecha_registro: new Date().toISOString()
     });
     setIsEditing(true);
   };
@@ -102,15 +103,20 @@ const ClientManager: React.FC = () => {
                 value={formData.correo} onChange={e => setFormData({...formData, correo: e.target.value})} placeholder="correo@ejemplo.com" />
             </div>
             
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
-                <MapIcon size={16} className="text-emerald-600" />
-                Ubicación Georeferenciada
+            <div className="col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+              <label className="block text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                <MapIcon size={18} className="text-blue-600" />
+                Ubicación del Proyecto (Georeferencia)
               </label>
-              <MapProjectPicker 
-                initialLocation={formData.location}
-                onLocationSelect={(loc) => setFormData({...formData, location: loc})} 
-              />
+              <div className="bg-white p-1 rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <MapProjectPicker 
+                  initialLocation={formData.location}
+                  onLocationSelect={(loc) => setFormData({...formData, location: loc})} 
+                />
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2 text-center">
+                Busca la ubicación exacta donde se construirá la casa para el seguimiento logístico.
+              </p>
             </div>
           </div>
           <div className="flex justify-end space-x-3 pt-6 border-t border-slate-100">

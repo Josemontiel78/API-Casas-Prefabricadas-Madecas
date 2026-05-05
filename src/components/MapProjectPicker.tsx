@@ -58,6 +58,14 @@ const LocationPickerMarker = ({ position, setPosition }: { position: L.LatLngExp
 // Component to handle live location and map centering
 const MapController = ({ centerPos }: { centerPos: L.LatLngExpression | null }) => {
   const map = useMap();
+  
+  useEffect(() => {
+    // Crucial for Leaflet maps inside modals or tabs
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 500);
+  }, [map]);
+
   useEffect(() => {
     if (centerPos) {
       map.flyTo(centerPos, 15);
@@ -99,50 +107,58 @@ const MapProjectPicker: React.FC<MapProjectPickerProps> = ({ onLocationSelect, i
       },
       (error) => {
         console.error("Error obteniendo ubicación:", error);
-        alert("No se pudo obtener tu ubicación. Verifica los permisos de tu navegador.");
+        alert("No se pudo obtener tu ubicación. Verifica los permisos.");
         setLocating(false);
       },
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full">
       <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center">
+          <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center shrink-0">
             <MapPin className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-bold text-slate-800">Georeferenciación (Código Abierto)</h3>
-            <p className="text-xs text-slate-500">Mueve el marcador o usa tu ubicación en tiempo real</p>
+            <h3 className="font-bold text-slate-800 text-sm">Georeferenciación</h3>
+            <p className="text-[10px] text-slate-500">Mueve el marcador o usa tu ubicación actual</p>
           </div>
         </div>
         
-        <div className="flex gap-2 w-full md:w-auto">
+        <div className="flex gap-2 w-full md:w-auto shrink-0">
           <button
-            onClick={findMyLocation}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              findMyLocation();
+            }}
             disabled={locating}
-            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-all"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition-all shadow-lg shadow-blue-100 z-[2000]"
           >
             {locating ? <Navigation className="w-4 h-4 animate-spin" /> : <Target className="w-4 h-4" />}
-            {locating ? "Localizando..." : "Mi Ubicación"}
+            {locating ? "LOCALIZANDO..." : "BUSCAR MI UBICACIÓN"}
           </button>
           
           <button
-            onClick={handleSave}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              handleSave();
+            }}
             disabled={!selectedLocation || saved}
             className={cn(
-              "flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all shadow-sm",
-              saved ? "bg-emerald-500 text-white" : "bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+              "flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all shadow-lg",
+              saved ? "bg-emerald-500 text-white shadow-emerald-100" : "bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
             )}
           >
-            {saved ? <><Save className="w-4 h-4" /> Guardado</> : <><Save className="w-4 h-4" /> Georeferenciar</>}
+            {saved ? <><Save className="w-4 h-4" /> GUARDADO</> : <><Save className="w-4 h-4" /> FIJAR PUNTO</>}
           </button>
         </div>
       </div>
 
-      <div className="h-[600px] w-full rounded-2xl overflow-hidden shadow-inner border border-slate-200 relative z-0">
+      <div className="h-[400px] w-full rounded-2xl overflow-hidden shadow-inner border border-slate-200 relative z-0">
         <MapContainer
           center={initialLocation || { lat: -33.4489, lng: -70.6693 }}
           zoom={13}

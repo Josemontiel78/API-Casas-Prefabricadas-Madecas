@@ -202,11 +202,34 @@ const BudgetManager: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Proyecto Base</label>
-              <select required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white"
-                value={formData.proyecto_id} onChange={e => setFormData({...formData, proyecto_id: e.target.value})}>
-                <option value="">Seleccione...</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.modelo}</option>)}
+              <label className="block text-sm font-medium text-slate-700 mb-1">Proyecto Base (Modelo)</label>
+              <select required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white font-bold text-slate-800"
+                value={formData.proyecto_id} onChange={e => {
+                  const pId = e.target.value;
+                  const selectedProj = projects.find(p => p.id === pId);
+                  
+                  let newItems = [...formData.detalle_items];
+                  let newTotal = formData.monto_total;
+
+                  if (selectedProj && selectedProj.especificaciones_default && selectedProj.especificaciones_default.length > 0) {
+                    if (confirm("¿Deseas cargar las especificaciones técnicas predeterminadas de este modelo?")) {
+                       const mapped = selectedProj.especificaciones_default.map(i => ({...i, id: crypto.randomUUID()}));
+                       newItems = [...newItems, ...mapped];
+                       newTotal = newItems.reduce((s, i) => s + i.total, 0);
+                    }
+                  } else if (selectedProj?.precio_base && formData.detalle_items.length === 0) {
+                    newTotal = selectedProj.precio_base;
+                  }
+
+                  setFormData({
+                    ...formData, 
+                    proyecto_id: pId,
+                    detalle_items: newItems,
+                    monto_total: newTotal
+                  });
+                }}>
+                <option value="">Seleccione Modelo...</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.modelo} (${p.precio_base?.toLocaleString()})</option>)}
               </select>
             </div>
             <div>

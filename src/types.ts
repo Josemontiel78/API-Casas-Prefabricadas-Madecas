@@ -13,6 +13,7 @@ export interface Client {
   domicilio: string;
   telefono: string;
   correo: string;
+  fecha_registro?: string; // Standardized ISO date
   location?: {
     lat: number;
     lng: number;
@@ -40,6 +41,8 @@ export interface Project {
   cliente_id?: string; // Linked client RUT reference
   modelo: string;
   superficie_m2: number;
+  precio_base: number;
+  especificaciones_default?: BudgetItem[]; // Array of items directly
   materiales_principales: string[]; // List of names
   adicionales: string[];
   etapa: 'Cotización' | 'Venta' | 'Construcción' | 'Entregado';
@@ -65,6 +68,9 @@ export interface Budget {
   fecha: string;
   detalle_items: BudgetItem[];
   monto_total: number;
+  forma_pago: 'Contado' | 'Transferencia' | 'Crédito Directo' | 'Crédito Hipotecario';
+  cuotas: number;
+  estado_pago: 'Pendiente' | 'Parcial' | 'Pagado';
 }
 
 export interface PaymentInstallment {
@@ -81,7 +87,10 @@ export interface Contract {
   presupuesto_id: string;
   fecha_contrato: string;
   monto_total: number;
-  forma_pago: PaymentInstallment[];
+  metodo_pago: 'Contado' | 'Transferencia' | 'Crédito Directo' | 'Crédito Hipotecario';
+  cuotas_pago: number;
+  estado_pago: 'Pendiente' | 'Parcial' | 'Pagado';
+  hitos_pago: PaymentInstallment[];
   estado: ContractStatus;
   contenido_texto: string; // The AI generated text
   

@@ -51,6 +51,8 @@ const ContractManager: React.FC = () => {
   // Form State
   const [selectedBudgetId, setSelectedBudgetId] = useState('');
   const [startDate, setStartDate] = useState('');
+  const [metodoPago, setMetodoPago] = useState<Contract['metodo_pago']>('Transferencia');
+  const [numCuotas, setNumCuotas] = useState(1);
   const [payments, setPayments] = useState<PaymentInstallment[]>([
     { descripcion: 'Firma de Contrato (Transferencia)', porcentaje: 30, monto: 0 },
     { descripcion: 'Entrega Radier y Arranques', porcentaje: 30, monto: 0 },
@@ -145,7 +147,10 @@ const ContractManager: React.FC = () => {
       presupuesto_id: selectedBudget.id,
       fecha_contrato: new Date().toISOString().split('T')[0],
       monto_total: selectedBudget.monto_total,
-      forma_pago: payments,
+      metodo_pago: metodoPago,
+      cuotas_pago: numCuotas,
+      estado_pago: 'Pendiente',
+      hitos_pago: payments,
       estado: ContractStatus.GENERATED,
       contenido_texto: generatedText,
       
@@ -570,6 +575,38 @@ const ContractManager: React.FC = () => {
                       />
                   </div>
               </div>
+          )}
+
+          {selectedBudget && (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4 animate-in slide-in-from-left-5">
+              <h3 className="text-lg font-bold text-slate-800">2.5 Condiciones de Venta</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Forma de Pago</label>
+                  <select 
+                    className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={metodoPago}
+                    onChange={(e) => setMetodoPago(e.target.value as any)}
+                  >
+                    <option value="Contado">Contado</option>
+                    <option value="Transferencia">Transferencia</option>
+                    <option value="Crédito Directo">Crédito Directo</option>
+                    <option value="Crédito Hipotecario">Crédito Hipotecario</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">N° Cuotas</label>
+                  <input 
+                    type="number"
+                    min="1"
+                    max="120"
+                    className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={numCuotas}
+                    onChange={(e) => setNumCuotas(parseInt(e.target.value) || 1)}
+                  />
+                </div>
+              </div>
+            </div>
           )}
 
           {selectedBudget && (

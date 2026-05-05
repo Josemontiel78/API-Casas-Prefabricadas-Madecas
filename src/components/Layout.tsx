@@ -51,13 +51,13 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
 
   const navItems = [
     { id: 'dashboard', label: 'Monitor de Ventas', icon: Home },
-    { id: 'hub', label: 'Hub de Interoperabilidad', icon: ExternalLink },
-    { id: 'map', label: 'Mapa Georeferenciado', icon: MapIcon },
-    { id: 'ai-assistant', label: 'IA Comercial Experta', icon: BrainCircuit },
-    { id: 'clients', label: 'Base de Clientes', icon: Users },
-    { id: 'projects', label: 'Catálogo de Modelos', icon: FolderOpen },
-    { id: 'budgets', label: 'Análisis de Costos', icon: Calculator },
-    { id: 'contracts', label: 'Gestión Contractual', icon: FileSignature },
+    { id: 'clients', label: '1. Registro de Clientes', icon: Users },
+    { id: 'projects', label: '2. Catálogo de Modelos', icon: FolderOpen },
+    { id: 'budgets', label: '3. Análisis de Costos', icon: Calculator },
+    { id: 'contracts', label: '4. Cierre y Gestión de Pagos', icon: FileSignature },
+    { id: 'hub', label: 'Interoperabilidad (RUT)', icon: ExternalLink },
+    { id: 'map', label: 'Georeferencia Global', icon: MapIcon },
+    { id: 'ai-assistant', label: 'IA Comercial Pro', icon: BrainCircuit },
   ];
 
   const removeNotification = (id: string) => {

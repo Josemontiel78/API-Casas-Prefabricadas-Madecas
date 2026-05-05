@@ -9,7 +9,7 @@ const ProjectManager: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Project>({
-    id: '', modelo: '', superficie_m2: 0, materiales_principales: [], adicionales: []
+    id: '', modelo: '', superficie_m2: 0, precio_base: 0, materiales_principales: [], adicionales: [], etapa: 'Cotización', especificaciones_default: []
   });
   
   const [tempMaterial, setTempMaterial] = useState('');
@@ -29,7 +29,7 @@ const ProjectManager: React.FC = () => {
   const handleNew = () => {
     setFormData({
       id: crypto.randomUUID(),
-      modelo: '', superficie_m2: 0, materiales_principales: [], adicionales: []
+      modelo: '', superficie_m2: 0, precio_base: 0, materiales_principales: [], adicionales: [], etapa: 'Cotización', especificaciones_default: []
     });
     setIsEditing(true);
   };
@@ -73,16 +73,21 @@ const ProjectManager: React.FC = () => {
             <Home className="text-blue-600" /> Definición de Modelo
         </h3>
         <form onSubmit={handleSave} className="space-y-6">
-          <div className="grid grid-cols-3 gap-6">
-            <div className="col-span-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="col-span-1">
               <label className="block text-sm font-medium text-slate-700 mb-1">Nombre Modelo</label>
               <input required type="text" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
-                value={formData.modelo} onChange={e => setFormData({...formData, modelo: e.target.value})} placeholder="Ej: Casa Mediterránea" />
+                value={formData.modelo} onChange={e => setFormData({...formData, modelo: e.target.value})} placeholder="Ej: Mediterránea" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Superficie (m²)</label>
               <input required type="number" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
                 value={formData.superficie_m2} onChange={e => setFormData({...formData, superficie_m2: Number(e.target.value)})} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Precio Base ($)</label>
+              <input required type="number" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-600" 
+                value={formData.precio_base} onChange={e => setFormData({...formData, precio_base: Number(e.target.value)})} />
             </div>
           </div>
           
@@ -171,8 +176,13 @@ const ProjectManager: React.FC = () => {
               </div>
               <div>
                 <h4 className="font-bold text-slate-800 text-lg leading-tight group-hover:text-blue-600 transition-colors">{proj.modelo}</h4>
-                <div className="flex items-center gap-1 text-slate-500 text-sm mt-1">
-                    <Ruler size={14} /> {proj.superficie_m2} m² construidos
+                <div className="flex flex-col gap-1 mt-1">
+                   <div className="flex items-center gap-1 text-slate-500 text-xs">
+                       <Ruler size={12} /> {proj.superficie_m2} m² construidos
+                   </div>
+                   <div className="text-blue-600 font-bold text-sm">
+                       ${proj.precio_base?.toLocaleString()} (Base)
+                   </div>
                 </div>
               </div>
             </div>

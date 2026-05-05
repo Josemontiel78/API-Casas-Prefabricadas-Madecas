@@ -117,16 +117,39 @@ export const seedDatabase = () => {
       rut: "12.345.678-9",
       domicilio: "Calle Las Rosas 45, Valdivia",
       telefono: "912345678",
-      correo: "juan.perez@email.com"
+      correo: "juan.perez@email.com",
+      fecha_registro: "2023-05-15T12:00:00Z",
+      location: { lat: -39.8193, lng: -73.2452 }
+    });
+    saveClient({
+      id: crypto.randomUUID(),
+      nombre: "María González",
+      rut: "15.987.654-3",
+      domicilio: "Av. O'Higgins 120, Valdivia",
+      telefono: "987654321",
+      correo: "maria.g@email.com",
+      fecha_registro: "2024-02-10T10:00:00Z",
+      location: { lat: -39.8142, lng: -73.2459 }
     });
   }
   if (getProjects().length === 0) {
     saveProject({
       id: crypto.randomUUID(),
-      modelo: "Casa Modelo BASICO",
+      modelo: "CABAÑA MODULAR 42M2",
       superficie_m2: 42,
-      materiales_principales: ["Pino Impregnado 2x6", "Zinc Acanalado 0.35", "Terciado Estructural 18mm"],
-      adicionales: ["Fosa Séptica"]
+      precio_base: 18500000,
+      etapa: 'Cotización',
+      materiales_principales: ["Pino Impregnado 2x6", "Zinc Acanalado 0.35", "Terciado Estructural 18mm", "Fibrocemento Exterior"],
+      adicionales: ["Fosa Séptica", "Instalación Eléctrica", "Termopanel"]
+    });
+    saveProject({
+      id: crypto.randomUUID(),
+      modelo: "MODELO AUSTRAL 74M2",
+      superficie_m2: 74,
+      precio_base: 32900000,
+      etapa: 'Cotización',
+      materiales_principales: ["Estructura Metalcon", "Teja Asfáltica", "Piso Flotante", "Cerámicos"],
+      adicionales: ["Radier de Hormigón", "Cocina Equipada"]
     });
   }
 };
