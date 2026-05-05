@@ -13,6 +13,11 @@ export interface Client {
   domicilio: string;
   telefono: string;
   correo: string;
+  location?: {
+    lat: number;
+    lng: number;
+  };
+  notas_comerciales?: string;
 }
 
 export interface Vendor {
@@ -32,10 +37,16 @@ export interface Material {
 
 export interface Project {
   id: string;
+  cliente_id?: string; // Linked client RUT reference
   modelo: string;
   superficie_m2: number;
   materiales_principales: string[]; // List of names
   adicionales: string[];
+  etapa: 'Cotización' | 'Venta' | 'Construcción' | 'Entregado';
+  location?: {
+    lat: number;
+    lng: number;
+  };
 }
 
 export interface BudgetItem {
@@ -92,5 +103,5 @@ export interface AppNotification {
 }
 
 // Helper type for views
-export type ViewState = 'dashboard' | 'clients' | 'projects' | 'budgets' | 'contracts' | 'settings' | 'ai-assistant';
+export type ViewState = 'dashboard' | 'hub' | 'map' | 'clients' | 'projects' | 'budgets' | 'contracts' | 'settings' | 'ai-assistant';
 export type UserRole = 'vendedor' | 'admin';

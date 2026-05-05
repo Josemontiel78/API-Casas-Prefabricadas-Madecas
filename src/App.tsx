@@ -7,6 +7,8 @@ import BudgetManager from '@/components/BudgetManager';
 import ContractManager from '@/components/ContractManager';
 import Dashboard from '@/components/Dashboard';
 import AIAssistant from '@/components/AIAssistant';
+import CommercialHub from '@/components/CommercialHub';
+import MapProjectPicker from '@/components/MapProjectPicker';
 import { seedDatabase } from '@/services/db';
 import { ViewState, UserRole } from '@/types';
 
@@ -21,6 +23,8 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (currentView) {
       case 'dashboard': return <Dashboard />;
+      case 'hub': return <CommercialHub />;
+      case 'map': return <MapProjectPicker onLocationSelect={(loc) => console.log('Location picked', loc)} />;
       case 'clients': return <ClientManager />;
       case 'projects': return <ProjectManager />;
       case 'budgets': return <BudgetManager />;

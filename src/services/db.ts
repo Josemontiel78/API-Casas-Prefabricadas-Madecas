@@ -90,6 +90,24 @@ export const saveVendor = (vendor: Vendor): void => {
   setItem(STORAGE_KEYS.VENDOR, vendor);
 };
 
+// --- Cross-Referencing ---
+export const getClientCommercialHistory = (rut: string) => {
+  const clients = getClients();
+  const client = clients.find(c => c.rut === rut);
+  if (!client) return null;
+
+  const projects = getProjects().filter(p => p.cliente_id === client.id);
+  const budgets = getBudgets().filter(b => b.cliente_id === client.id);
+  const contracts = getContracts().filter(c => c.cliente_id === client.id);
+
+  return {
+    client,
+    projects,
+    budgets,
+    contracts
+  };
+};
+
 // --- Seeding ---
 export const seedDatabase = () => {
   if (getClients().length === 0) {

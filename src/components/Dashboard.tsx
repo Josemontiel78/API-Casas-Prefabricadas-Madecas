@@ -1,131 +1,226 @@
+
 import React, { useEffect, useState } from 'react';
 import { getClients, getProjects, getBudgets, getContracts } from '@/services/db';
-import { Contract, Client } from '@/types';
-import { Users, FolderOpen, Calculator, FileSignature, ArrowUpRight, Clock, DollarSign } from 'lucide-react';
+import { Contract, Client, Project, Budget } from '@/types';
+import { 
+  Users, 
+  FolderOpen, 
+  Calculator, 
+  FileSignature, 
+  ArrowUpRight, 
+  Clock, 
+  DollarSign, 
+  TrendingUp, 
+  Target,
+  BarChart3,
+  Calendar,
+  Layers
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { motion } from 'motion/react';
 
 const Dashboard: React.FC = () => {
-  const [recentContracts, setRecentContracts] = useState<(Contract & { clientName?: string })[]>([]);
-  const clients = getClients();
-  const projects = getProjects();
-  const budgets = getBudgets();
-  const contracts = getContracts();
+  const [stats, setStats] = useState({
+    totalClients: 0,
+    activeProjects: 0,
+    totalQuotes: 0,
+    signedContracts: 0,
+    totalVolume: 0,
+    pendingVolume: 0
+  });
+
+  const [recentContracts, setRecentContracts] = useState<Contract[]>([]);
 
   useEffect(() => {
-    // Process recent activity
-    const sorted = [...contracts]
-      .sort((a, b) => new Date(b.fecha_contrato).getTime() - new Date(a.fecha_contrato).getTime())
-      .slice(0, 5)
-      .map(c => ({
-        ...c,
-        clientName: clients.find(cli => cli.id === c.cliente_id)?.nombre || 'Cliente Desconocido'
-      }));
-    setRecentContracts(sorted);
+    const clients = getClients();
+    const projects = getProjects();
+    const budgets = getBudgets();
+    const contracts = getContracts();
+
+    const totalVolume = contracts.reduce((sum, c) => sum + (c.monto_total || 0), 0);
+    const pendingVolume = budgets.reduce((sum, b) => {
+        // Only count if not yet contracted
+        const isContracted = contracts.some(c => c.presupuesto_id === b.id);
+        return isContracted ? sum : sum + b.monto_total;
+    }, 0);
+
+    setStats({
+      totalClients: clients.length,
+      activeProjects: projects.length,
+      totalQuotes: budgets.length,
+      signedContracts: contracts.length,
+      totalVolume,
+      pendingVolume
+    });
+
+    setRecentContracts(contracts.slice(-5).reverse());
   }, []);
 
-  const stats = [
-    { label: 'Clientes Totales', value: clients.length, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
-    { label: 'Modelos Disponibles', value: projects.length, icon: FolderOpen, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' },
-    { label: 'Presupuestos Emitidos', value: budgets.length, icon: Calculator, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
-    { label: 'Contratos Cerrados', value: contracts.length, icon: FileSignature, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
-  ];
+  const MetricCard = ({ title, value, sub, icon: Icon, color, trend }: any) => (
+    <motion.div 
+      whileHover={{ y: -4 }}
+      className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden"
+    >
+      <div className={cn("absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 opacity-5 rounded-full", color)}></div>
+      <div className="flex justify-between items-start mb-4">
+        <div className={cn("p-3 rounded-xl", color.replace('bg-', 'bg-opacity-10 text-'))}>
+          <Icon className="w-6 h-6" />
+        </div>
+        {trend && (
+            <div className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                <ArrowUpRight className="w-3 h-3" />
+                {trend}
+            </div>
+        )}
+      </div>
+      <div>
+        <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">{title}</p>
+        <h3 className="text-2xl font-black text-slate-800">{value}</h3>
+        <p className="text-slate-400 text-xs mt-1">{sub}</p>
+      </div>
+    </motion.div>
+  );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      
-      {/* Welcome Banner */}
-      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl"></div>
-        <div className="relative z-10">
-            <h2 className="text-3xl font-bold mb-3 tracking-tight">Bienvenido al Panel de Control</h2>
-            <p className="text-slate-300 max-w-2xl text-lg font-light leading-relaxed">
-            Gestione sus proyectos de casas prefabricadas, analice presupuestos con IA y genere contratos legales en segundos.
-            </p>
-            <div className="mt-8 flex gap-4">
-                <div className="flex items-center px-3 py-1 bg-white/10 rounded-full text-xs font-medium backdrop-blur-sm border border-white/10">
-                    <span className="w-2 h-2 bg-emerald-400 rounded-full mr-2 shadow-[0_0_10px_rgba(52,211,153,0.5)]"></span> 
-                    IA Gemini Activa
+    <div id="dashboard-monitor" className="space-y-8">
+      {/* Header Stat Bar */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <MetricCard 
+          title="Cartera Clientes" 
+          value={stats.totalClients} 
+          sub="Prospectos únicos registrados"
+          icon={Users} 
+          color="bg-indigo-600"
+          trend="+12%"
+        />
+        <MetricCard 
+          title="Gestión Proyectos" 
+          value={stats.activeProjects} 
+          sub="Modelos en catálogo actual"
+          icon={Layers} 
+          color="bg-blue-600"
+        />
+        <MetricCard 
+          title="Conversión Cierre" 
+          value={stats.signedContracts} 
+          sub={`${((stats.signedContracts / (stats.totalQuotes || 1)) * 100).toFixed(1)}% tasa de éxito`}
+          icon={FileSignature} 
+          color="bg-emerald-600"
+          trend="8.4%"
+        />
+        <MetricCard 
+          title="Volumen Facturado" 
+          value={`$${(stats.totalVolume / 1000000).toFixed(1)}M`} 
+          sub="UF equivalentes histórico"
+          icon={DollarSign} 
+          color="bg-amber-600"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Pipeline Analysis */}
+        <div className="lg:col-span-2 space-y-6">
+           <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 h-full">
+              <div className="flex justify-between items-center mb-8">
+                <div>
+                    <h3 className="text-xl font-bold text-slate-800">Visualización de Pipeline Comercial</h3>
+                    <p className="text-sm text-slate-500">Proyección de ingresos y estados de cotización</p>
                 </div>
-                <div className="flex items-center px-3 py-1 bg-white/10 rounded-full text-xs font-medium backdrop-blur-sm border border-white/10">
-                    <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span> 
-                    v1.2.0 Stable
+                <div className="bg-slate-50 p-2 rounded-xl flex gap-2">
+                    <button className="px-4 py-2 bg-white shadow-sm rounded-lg text-xs font-bold text-slate-700">Mensual</button>
+                    <button className="px-4 py-2 hover:bg-white/50 rounded-lg text-xs font-bold text-slate-400 transition-all">Anual</button>
+                </div>
+              </div>
+
+              {/* Progress visualizer */}
+              <div className="space-y-8">
+                  <div>
+                      <div className="flex justify-between text-sm mb-2">
+                          <span className="font-bold text-slate-600">Presupuestos en Proceso</span>
+                          <span className="font-mono text-indigo-600 font-bold">${stats.pendingVolume.toLocaleString('es-CL')}</span>
+                      </div>
+                      <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: '65%' }}
+                            className="h-full bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(79,70,229,0.3)]"
+                          />
+                      </div>
+                  </div>
+
+                  <div>
+                      <div className="flex justify-between text-sm mb-2">
+                          <span className="font-bold text-slate-600">Contratos por Firmar</span>
+                          <span className="font-mono text-emerald-600 font-bold">12 unidades</span>
+                      </div>
+                      <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: '42%' }}
+                            className="h-full bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                          />
+                      </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+                      {[
+                        { label: 'Visitas', val: '24', icon: Users, color: 'text-blue-500' },
+                        { label: 'Cotizado', val: '18', icon: Calculator, color: 'text-indigo-500' },
+                        { label: 'Cierre', val: '4', icon: Target, color: 'text-emerald-500' },
+                        { label: 'Proyección', val: '$240M', icon: TrendingUp, color: 'text-amber-500' },
+                      ].map((item, i) => (
+                        <div key={i} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                             <item.icon className={cn("w-5 h-5 mb-2", item.color)} />
+                             <p className="text-xl font-black text-slate-800">{item.val}</p>
+                             <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">{item.label}</p>
+                        </div>
+                      ))}
+                  </div>
+              </div>
+           </div>
+        </div>
+
+        {/* Sidebar Activity */}
+        <div className="space-y-6">
+            <div className="bg-slate-900 p-8 rounded-3xl shadow-xl text-white relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500 rounded-full blur-[80px] opacity-20"></div>
+                <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-emerald-400" />
+                    Actividad Reciente
+                </h3>
+                <div className="space-y-6 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-slate-800">
+                    {recentContracts.length > 0 ? recentContracts.map((c, i) => (
+                        <div key={c.id} className="relative pl-8">
+                            <div className="absolute left-0 top-1 w-4 h-4 rounded-full bg-slate-900 border-2 border-emerald-500 z-10"></div>
+                            <p className="text-sm font-bold truncate">Contrato {c.id.slice(0,8)}</p>
+                            <p className="text-xs text-slate-400 mb-1">{c.fecha_contrato}</p>
+                            <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20 uppercase font-bold">Firmado</span>
+                        </div>
+                    )) : (
+                        <p className="text-slate-500 text-sm italic pl-8">No hay contratos recientes</p>
+                    )}
+                </div>
+                <button className="w-full mt-8 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-bold tracking-wider uppercase border border-white/10 transition-all">
+                    Ver Historial Completo
+                </button>
+            </div>
+
+            <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center">
+                        <BarChart3 className="w-6 h-6" />
+                    </div>
+                    <div>
+                        <p className="text-sm font-bold text-slate-800">Ratio de Gestión</p>
+                        <p className="text-xs text-slate-500">Eficiencia vs Meta Mensual</p>
+                    </div>
+                </div>
+                <div className="mt-4 flex items-center justify-between">
+                    <span className="text-2xl font-black text-slate-800">76%</span>
+                    <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">+4.2%</span>
                 </div>
             </div>
         </div>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, idx) => (
-          <div key={idx} className={`bg-white p-6 rounded-2xl shadow-sm border ${stat.border} flex items-center justify-between hover:shadow-md transition-shadow group`}>
-            <div>
-              <p className="text-sm font-medium text-slate-500 mb-1">{stat.label}</p>
-              <h3 className="text-3xl font-bold text-slate-800">{stat.value}</h3>
-            </div>
-            <div className={`p-4 rounded-xl ${stat.bg} ${stat.color} group-hover:scale-110 transition-transform`}>
-              <stat.icon size={26} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Recent Activity Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                  <h3 className="font-bold text-slate-800 text-lg">Actividad Reciente</h3>
-                  <button className="text-xs font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
-                      Ver todos <ArrowUpRight size={14} />
-                  </button>
-              </div>
-              <div className="divide-y divide-slate-100">
-                  {recentContracts.length === 0 ? (
-                      <div className="p-10 text-center text-slate-400">
-                          <Clock size={40} className="mx-auto mb-3 opacity-20" />
-                          <p>No hay actividad reciente registrada.</p>
-                      </div>
-                  ) : (
-                      recentContracts.map(contract => (
-                          <div key={contract.id} className="p-5 hover:bg-slate-50 transition flex items-center justify-between group">
-                              <div className="flex items-center gap-4">
-                                  <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${
-                                      contract.estado === 'Firmado' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
-                                  }`}>
-                                      <FileSignature size={18} />
-                                  </div>
-                                  <div>
-                                      <h4 className="font-bold text-slate-800 text-sm">Contrato #{contract.id.slice(0,6)}</h4>
-                                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                                          <Users size={10} /> {contract.clientName}
-                                      </p>
-                                  </div>
-                              </div>
-                              <div className="text-right">
-                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                      contract.estado === 'Firmado' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                                  }`}>
-                                      {contract.estado}
-                                  </span>
-                                  <p className="text-xs text-slate-400 mt-1">{contract.fecha_contrato}</p>
-                              </div>
-                          </div>
-                      ))
-                  )}
-              </div>
-          </div>
-          
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-center items-center text-center">
-             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-4">
-                <DollarSign size={32} />
-             </div>
-             <h3 className="font-bold text-slate-800 text-lg mb-2">Ingresos Estimados</h3>
-             <p className="text-sm text-slate-500 mb-6">Basado en contratos generados este mes.</p>
-             <div className="text-4xl font-bold text-slate-800 mb-2">
-                 ${contracts.reduce((sum, c) => sum + (c.monto_total || 0), 0).toLocaleString()}
-             </div>
-             <p className="text-xs text-emerald-600 font-medium bg-emerald-50 px-2 py-1 rounded-full">
-                 +12% vs mes anterior
-             </p>
-          </div>
       </div>
     </div>
   );

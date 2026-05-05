@@ -13,7 +13,9 @@ import {
   CheckCircle,
   AlertCircle,
   Info,
-  BrainCircuit
+  BrainCircuit,
+  Map as MapIcon,
+  ExternalLink
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -48,12 +50,14 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
   }, []);
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Home },
-    { id: 'ai-assistant', label: 'Inteligencia Artificial', icon: BrainCircuit },
-    { id: 'clients', label: 'Clientes', icon: Users },
-    { id: 'projects', label: 'Proyectos', icon: FolderOpen },
-    { id: 'budgets', label: 'Presupuestos', icon: Calculator },
-    { id: 'contracts', label: 'Contratos', icon: FileSignature },
+    { id: 'dashboard', label: 'Monitor de Ventas', icon: Home },
+    { id: 'hub', label: 'Hub de Interoperabilidad', icon: ExternalLink },
+    { id: 'map', label: 'Mapa Georeferenciado', icon: MapIcon },
+    { id: 'ai-assistant', label: 'IA Comercial Experta', icon: BrainCircuit },
+    { id: 'clients', label: 'Base de Clientes', icon: Users },
+    { id: 'projects', label: 'Catálogo de Modelos', icon: FolderOpen },
+    { id: 'budgets', label: 'Análisis de Costos', icon: Calculator },
+    { id: 'contracts', label: 'Gestión Contractual', icon: FileSignature },
   ];
 
   const removeNotification = (id: string) => {
