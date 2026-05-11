@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Contract, Budget, Client, Project, Vendor, ContractStatus, PaymentInstallment } from '@/types';
 import { getContracts, saveContract, getBudgets, getClients, getProjects, getVendor, deleteContract } from '@/services/db';
 import { generateContractText } from '@/services/geminiService';
-import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, Edit3, Eye, FileType, Trash2, Maximize2, AlertCircle, Calculator, ArrowRight } from 'lucide-react';
+import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, Edit3, Eye, FileType, Trash2, Maximize2, AlertCircle, Calculator, ArrowRight, Upload, Image as ImageIcon } from 'lucide-react';
 
 // --- MADECAS LOGO SVG ---
 const MADECAS_LOGO_SVG = `
@@ -64,7 +64,9 @@ const ContractManager: React.FC = () => {
   const [signingContract, setSigningContract] = useState<Contract | null>(null);
   const [signerRole, setSignerRole] = useState<'cliente' | 'vendedor' | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [activeContractForUpload, setActiveContractForUpload] = useState<string | null>(null);
   
   // Selection Logic Helpers
   const selectedBudget = budgets.find(b => b.id === selectedBudgetId);
@@ -339,6 +341,44 @@ const ContractManager: React.FC = () => {
     window.dispatchEvent(new CustomEvent('app-notification', { 
         detail: { message: 'Firma registrada correctamente', type: 'success' } 
     }));
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeContractForUpload) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      const contract = contracts.find(c => c.id === activeContractForUpload);
+      if (contract) {
+        const updatedContract = { 
+          ...contract, 
+          documento_archivo_url: base64,
+          documento_archivo_tipo: file.type.includes('pdf') ? 'PDF' : 'PHOTO' as any,
+          fecha_escaneo: new Date().toISOString()
+        };
+        saveContract(updatedContract);
+        setContracts(getContracts());
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+            detail: { message: 'Documento cargado correctamente', type: 'success' } 
+        }));
+      }
+      setActiveContractForUpload(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const triggerUpload = (contractId: string) => {
+    setActiveContractForUpload(contractId);
+    fileInputRef.current?.click();
+  };
+
+  const viewDocument = (url: string) => {
+    const w = window.open('');
+    if (w) {
+        w.document.write(`<iframe src="${url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+    }
   };
 
   const formatTextToHtml = (text: string) => {
@@ -975,6 +1015,14 @@ const ContractManager: React.FC = () => {
         </div>
       )}
 
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        accept="image/*,application/pdf" 
+        onChange={handleFileUpload}
+      />
+
       <div className="flex justify-between items-center gap-4">
         <div>
             <h3 className="text-2xl font-bold text-slate-800">Contratos Legales</h3>
@@ -1047,6 +1095,23 @@ const ContractManager: React.FC = () => {
                         </div>
 
                         <div className="flex gap-2 border-l pl-4 border-slate-100 ml-2">
+                            {contract.documento_archivo_url ? (
+                                <button 
+                                    className="p-2.5 text-emerald-600 hover:bg-emerald-50 rounded-xl transition"
+                                    onClick={() => viewDocument(contract.documento_archivo_url!)}
+                                    title="Ver Escaneo / PDF"
+                                >
+                                    {contract.documento_archivo_tipo === 'PDF' ? <FileText size={20} /> : <ImageIcon size={20} />}
+                                </button>
+                            ) : (
+                                <button 
+                                    className="p-2.5 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition"
+                                    onClick={() => triggerUpload(contract.id)}
+                                    title="Subir Contrato Escaneado"
+                                >
+                                    <Upload size={20} />
+                                </button>
+                            )}
                             <button 
                             className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition"
                             onClick={() => handleEditSavedContract(contract)}

@@ -115,6 +115,9 @@ export interface Contract {
   firma_cliente?: string; // Base64 image data
   firma_vendedor?: string; // Base64 image data
   fecha_firma?: string;
+  documento_archivo_url?: string; // Base64 or Blob URL for now
+  documento_archivo_tipo?: 'PDF' | 'PHOTO';
+  fecha_escaneo?: string;
 }
 
 export interface AppNotification {
