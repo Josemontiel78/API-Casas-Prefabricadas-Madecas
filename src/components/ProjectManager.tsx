@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Project } from '@/types';
+import { Project, BudgetItem } from '@/types';
 import { getProjects, saveProject, deleteProject } from '@/services/db';
 import { Plus, Save, Home, Trash2, Search, Ruler, Layers } from 'lucide-react';
 
@@ -14,6 +14,11 @@ const ProjectManager: React.FC = () => {
   
   const [tempMaterial, setTempMaterial] = useState('');
   const [tempAdicional, setTempAdicional] = useState('');
+  
+  // Temp budget item for specs
+  const [newSpecItem, setNewSpecItem] = useState<BudgetItem>({
+    id: '', descripcion: '', cantidad: 1, unidad: 'un', precio_unitario: 0, total: 0
+  });
 
   useEffect(() => {
     const data = getProjects();
@@ -64,6 +69,36 @@ const ProjectManager: React.FC = () => {
       setFormData(prev => ({ ...prev, adicionales: [...prev.adicionales, tempAdicional] }));
       setTempAdicional('');
     }
+  };
+
+  const addSpecItem = () => {
+    if (!newSpecItem.descripcion) return;
+    const total = newSpecItem.cantidad * newSpecItem.precio_unitario;
+    const itemToAdd = { ...newSpecItem, id: crypto.randomUUID(), total };
+    
+    setFormData(prev => {
+      const currentSpecs = prev.especificaciones_default || [];
+      const newSpecs = [...currentSpecs, itemToAdd];
+      return {
+        ...prev,
+        especificaciones_default: newSpecs,
+        precio_base: newSpecs.reduce((sum, i) => sum + i.total, 0) || prev.precio_base
+      };
+    });
+
+    setNewSpecItem({ id: '', descripcion: '', cantidad: 1, unidad: 'un', precio_unitario: 0, total: 0 });
+  };
+
+  const removeSpecItem = (id: string) => {
+    setFormData(prev => {
+      const currentSpecs = prev.especificaciones_default || [];
+      const newSpecs = currentSpecs.filter(i => i.id !== id);
+      return {
+        ...prev,
+        especificaciones_default: newSpecs,
+        precio_base: newSpecs.reduce((sum, i) => sum + i.total, 0) || prev.precio_base
+      };
+    });
   };
 
   if (isEditing) {
@@ -121,6 +156,50 @@ const ProjectManager: React.FC = () => {
                    {m} <button type="button" onClick={() => setFormData({...formData, adicionales: formData.adicionales.filter((_, idx) => idx !== i)})} className="text-blue-400 hover:text-red-500">×</button>
                 </span>
               ))}
+            </div>
+          </div>
+
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <label className="block text-sm font-bold text-slate-700 mb-2">Partidas Detalladas (Presupuesto Base)</label>
+            <div className="flex flex-wrap md:flex-nowrap gap-2 bg-white p-3 rounded-lg border border-slate-200 mb-3">
+                <input type="text" className="flex-1 p-2 border border-slate-200 rounded-lg text-sm" placeholder="Partida/Material"
+                    value={newSpecItem.descripcion} onChange={e => setNewSpecItem({...newSpecItem, descripcion: e.target.value})} />
+                <input type="number" className="w-20 p-2 border border-slate-200 rounded-lg text-sm" placeholder="Cant."
+                    value={newSpecItem.cantidad} onChange={e => setNewSpecItem({...newSpecItem, cantidad: Number(e.target.value)})} />
+                <input type="number" className="w-24 p-2 border border-slate-200 rounded-lg text-sm" placeholder="Precio"
+                    value={newSpecItem.precio_unitario} onChange={e => setNewSpecItem({...newSpecItem, precio_unitario: Number(e.target.value)})} />
+                <button type="button" onClick={addSpecItem} className="bg-blue-600 text-white px-4 rounded-lg font-bold hover:bg-blue-700">+</button>
+            </div>
+            
+            <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-lg bg-white">
+                <table className="w-full text-xs">
+                    <thead className="bg-slate-100 sticky top-0">
+                        <tr>
+                            <th className="p-2 text-left">Ítem</th>
+                            <th className="p-2 text-right">Cant.</th>
+                            <th className="p-2 text-right">Precio</th>
+                            <th className="p-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {(formData.especificaciones_default || []).map((item) => (
+                            <tr key={item.id}>
+                                <td className="p-2">{item.descripcion}</td>
+                                <td className="p-2 text-right">{item.cantidad} {item.unidad}</td>
+                                <td className="p-2 text-right">${item.precio_unitario.toLocaleString()}</td>
+                                <td className="p-2 text-center">
+                                    <button type="button" onClick={() => removeSpecItem(item.id)} className="text-red-400 hover:text-red-600">×</button>
+                                </td>
+                            </tr>
+                        ))}
+                        {(formData.especificaciones_default || []).length === 0 && (
+                            <tr><td colSpan={4} className="p-4 text-center text-slate-400 italic">No hay partidas detalladas.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+            <div className="mt-2 text-right font-bold text-slate-700">
+                Total Detallado: ${(formData.especificaciones_default || []).reduce((s, i) => s + i.total, 0).toLocaleString()}
             </div>
           </div>
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Budget, BudgetItem, Client, Project } from '@/types';
-import { getBudgets, saveBudget, getClients, getProjects, deleteBudget } from '@/services/db';
+import { getBudgets, saveBudget, getClients, getProjects, deleteBudget, saveProject } from '@/services/db';
 import { analyzeBudgetFile } from '@/services/geminiService';
 import { Plus, Save, Trash2, Calculator, Upload, Loader2, Eye, X, FileText, Search, ArrowRight } from 'lucide-react';
 
@@ -14,6 +14,8 @@ const BudgetManager: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [viewingBudget, setViewingBudget] = useState<Budget | null>(null);
+  const [modelName, setModelName] = useState('');
+  const [showModelSave, setShowModelSave] = useState(false);
   
   const [formData, setFormData] = useState<Budget>({
     id: '', cliente_id: '', proyecto_id: '', fecha: new Date().toISOString().split('T')[0], detalle_items: [], monto_total: 0
@@ -164,6 +166,35 @@ const BudgetManager: React.FC = () => {
     setIsEditing(false);
     window.dispatchEvent(new CustomEvent('app-notification', { 
         detail: { message: 'Presupuesto guardado correctamente', type: 'success' } 
+    }));
+  };
+
+  const handleSaveAsModel = () => {
+    if (!modelName) {
+      window.dispatchEvent(new CustomEvent('app-notification', { 
+        detail: { message: 'Debe ingresar un nombre para el modelo', type: 'error' } 
+      }));
+      return;
+    }
+
+    const newProject: Project = {
+      id: crypto.randomUUID(),
+      modelo: modelName.toUpperCase(),
+      superficie_m2: 0, // Should be filled or guessed
+      precio_base: formData.monto_total,
+      etapa: 'Cotización',
+      materiales_principales: formData.detalle_items.map(i => i.descripcion).slice(0, 5),
+      adicionales: [],
+      especificaciones_default: formData.detalle_items.map(i => ({...i, id: crypto.randomUUID()}))
+    };
+
+    saveProject(newProject);
+    setProjects(getProjects());
+    setShowModelSave(false);
+    setModelName('');
+    
+    window.dispatchEvent(new CustomEvent('app-notification', { 
+        detail: { message: `Modelo "${newProject.modelo}" creado en el catálogo`, type: 'success' } 
     }));
   };
 
@@ -326,12 +357,45 @@ const BudgetManager: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">
-            <button type="button" onClick={() => setIsEditing(false)} className="px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition">Cancelar</button>
-            <button type="submit" className="px-5 py-2.5 bg-orange-600 text-white rounded-lg flex items-center gap-2 hover:bg-orange-700 shadow-md transition font-medium">
-              <Save size={18} /> Guardar Presupuesto
+          <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+            <button 
+              type="button" 
+              onClick={() => setShowModelSave(true)}
+              className="px-4 py-2 text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-lg font-medium transition flex items-center gap-2"
+            >
+              <Plus size={18} /> Convertir a Nuevo Modelo
             </button>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setIsEditing(false)} className="px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition">Cancelar</button>
+              <button type="submit" className="px-5 py-2.5 bg-orange-600 text-white rounded-lg flex items-center gap-2 hover:bg-orange-700 shadow-md transition font-medium">
+                <Save size={18} /> Guardar Presupuesto
+              </button>
+            </div>
           </div>
+
+          {showModelSave && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+              <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm border border-slate-200 animate-in zoom-in-95">
+                <h4 className="text-lg font-bold text-slate-800 mb-4">Guardar como Modelo de Catálogo</h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 mb-1 block">Nombre del Modelo</label>
+                    <input 
+                      type="text" 
+                      className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Ej: Mediterránea Premium 90m2"
+                      value={modelName}
+                      onChange={e => setModelName(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button type="button" onClick={() => setShowModelSave(false)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg">Cancelar</button>
+                    <button type="button" onClick={handleSaveAsModel} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold shadow-md">Crear Modelo</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </form>
       </div>
     );
