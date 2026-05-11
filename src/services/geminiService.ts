@@ -3,11 +3,15 @@ import { GoogleGenAI } from "@google/genai";
 import { Client, Project, Budget, Vendor, PaymentInstallment, Contract } from "@/types";
 
 const getGeminiClient = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("ERROR: La API KEY de Gemini no está configurada en el entorno.");
+  // Try to get from process.env (Vite define) or import.meta.env (Standard Vite)
+  const apiKey = (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'undefined') 
+    ? process.env.GEMINI_API_KEY 
+    : (import.meta as any).env?.VITE_GEMINI_API_KEY;
+  
+  if (!apiKey || apiKey === 'undefined' || apiKey === '') {
+    throw new Error("ERROR: La API KEY de Gemini no está configurada. En Vercel, añade VITE_GEMINI_API_KEY o GEMINI_API_KEY a las variables de entorno.");
   }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI(apiKey);
 };
 
 // --- Contract Generation ---
@@ -86,22 +90,20 @@ export const generateContractText = async (
     FECHA HOY: ${new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}.
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.1, 
+    const response = await ai.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      systemInstruction: systemInstruction,
+    }).generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.1,
       }
     });
 
-    return response.text || "Error al generar contrato.";
+    return response.response.text() || "Error al generar contrato.";
   } catch (error) {
     console.error("Error generating contract:", error);
     const msg = (error as Error).message;
-    if (msg.includes("GEMINI_API_KEY")) {
-        return "Error: No se encontró la API Key.";
-    }
     return `Error de conexión con IA: ${msg}`;
   }
 };
@@ -111,23 +113,24 @@ export const generateContractText = async (
 export const analyzeBudgetFile = async (base64Data: string, mimeType: string): Promise<string> => {
   try {
     const ai = getGeminiClient();
-
-    const prompt = "Analiza este documento (imagen, excel o pdf de presupuesto). Extrae los ítems de construcción, materiales o servicios listados. Retorna EXCLUSIVAMENTE un JSON con la estructura: { \"items\": [ {\"descripcion\": string, \"cantidad\": number, \"unidad\": string, \"precio_unitario\": number} ] }. Si no encuentras precios, estima 0. Si no encuentras cantidades, estima 1.";
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: {
-        parts: [
-          { inlineData: { mimeType: mimeType, data: base64Data } },
-          { text: prompt }
-        ]
-      },
-      config: {
-        responseMimeType: "application/json"
-      }
+    const model = ai.getGenerativeModel({
+        model: "gemini-1.5-flash",
     });
 
-    return response.text || "";
+    const prompt = "Actúa como un experto en presupuestos de construcción y OCR. Analiza COMPLETAMENTE este documento (imagen o PDF). Extrae TODOS los ítems, materiales o servicios listados. Retorna EXCLUSIVAMENTE un JSON válido con esta estructura: { \"items\": [ {\"descripcion\": string, \"cantidad\": number, \"unidad\": string, \"precio_unitario\": number} ] }. Asegúrate de que los números sean puros. Si la imagen es borrosa o el PDF es complejo, identifica los términos clave de construcción.";
+
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          mimeType: mimeType,
+          data: base64Data
+        }
+      },
+      { text: prompt }
+    ]);
+
+    const response = await result.response;
+    return response.text() || "";
   } catch (error) {
     console.error("Error analyzing file:", error);
     throw error;
@@ -149,7 +152,6 @@ export const generateBusinessAnalysis = async (
   try {
     const ai = getGeminiClient();
 
-    // Serialize data securely
     const contextString = JSON.stringify(contextData, null, 2);
 
     const systemInstruction = `
@@ -172,16 +174,15 @@ export const generateBusinessAnalysis = async (
     ${contextString}
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: userPrompt,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.3, // Slightly higher for creativity in reports
-      }
+    const model = ai.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      systemInstruction: systemInstruction,
     });
 
-    return response.text || "No se pudo generar el análisis.";
+    const result = await model.generateContent(userPrompt);
+    const response = await result.response;
+
+    return response.text() || "No se pudo generar el análisis.";
 
   } catch (error) {
     console.error("Error in AI Analysis:", error);

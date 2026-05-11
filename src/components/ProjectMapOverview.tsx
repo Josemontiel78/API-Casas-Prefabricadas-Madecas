@@ -52,14 +52,28 @@ const ProjectMapOverview: React.FC = () => {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
+        console.log("Ubicación obtenida (Resumen):", latitude, longitude);
         setUserLocation([latitude, longitude]);
         setIsLocating(false);
       },
-      () => {
-        alert("No se pudo obtener tu ubicación. Verifica los permisos.");
+      (error) => {
+        console.error("Error obteniendo ubicación:", error);
+        let msg = "No se pudo obtener tu ubicación.";
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            msg = "Permiso de ubicación denegado. Por favor, habilítalo en tu navegador.";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            msg = "La ubicación no está disponible actualmente.";
+            break;
+          case error.TIMEOUT:
+            msg = "Se agotó el tiempo de espera para obtener la ubicación.";
+            break;
+        }
+        alert(msg);
         setIsLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 

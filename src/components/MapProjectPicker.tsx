@@ -101,16 +101,29 @@ const MapProjectPicker: React.FC<MapProjectPickerProps> = ({ onLocationSelect, i
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const newPos = L.latLng(position.coords.latitude, position.coords.longitude);
+        console.log("Ubicación obtenida:", newPos);
         setLiveLocation(newPos);
         setSelectedLocation(newPos);
         setLocating(false);
       },
       (error) => {
         console.error("Error obteniendo ubicación:", error);
-        alert("No se pudo obtener tu ubicación. Verifica los permisos.");
+        let msg = "No se pudo obtener tu ubicación.";
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            msg = "Permiso de ubicación denegado. Por favor, habilítalo en tu navegador.";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            msg = "La ubicación no está disponible actualmente.";
+            break;
+          case error.TIMEOUT:
+            msg = "Se agotó el tiempo de espera para obtener la ubicación.";
+            break;
+        }
+        alert(msg);
         setLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
