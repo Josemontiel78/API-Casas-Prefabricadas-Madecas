@@ -256,8 +256,8 @@ const ProjectManager: React.FC = () => {
               <div>
                 <h4 className="font-bold text-slate-800 text-lg leading-tight group-hover:text-blue-600 transition-colors">{proj.modelo}</h4>
                 <div className="flex flex-col gap-1 mt-1">
-                   <div className="flex items-center gap-1 text-slate-500 text-xs">
-                       <Ruler size={12} /> {proj.superficie_m2} m² construidos
+                   <div className="flex items-center gap-1.5 text-slate-800 font-bold bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 w-fit">
+                       <Ruler size={14} className="text-emerald-600" /> {proj.superficie_m2} m²
                    </div>
                    <div className="text-blue-600 font-bold text-sm">
                        ${proj.precio_base?.toLocaleString()} (Base)

@@ -19,6 +19,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     seedDatabase();
+
+    const handleViewChange = (e: any) => {
+      if (e.detail) {
+        setCurrentView(e.detail as ViewState);
+      }
+    };
+
+    window.addEventListener('app-view-change', handleViewChange);
+    return () => window.removeEventListener('app-view-change', handleViewChange);
   }, []);
 
   const renderContent = () => {

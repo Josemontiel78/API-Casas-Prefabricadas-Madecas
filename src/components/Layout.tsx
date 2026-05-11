@@ -136,12 +136,32 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-50">
-        <header className="bg-white border-b border-slate-200 h-20 flex items-center justify-between px-8 z-10">
-          <div>
-              <h2 className="text-2xl font-bold text-slate-800 capitalize tracking-tight flex items-center gap-2">
+        <header className="bg-white border-b border-slate-200 min-h-20 flex items-center justify-between px-8 z-10 py-4 md:py-0">
+          <div className="flex flex-col md:flex-row md:items-center gap-4">
+              <h2 className="text-2xl font-bold text-slate-800 capitalize tracking-tight flex items-center gap-2 whitespace-nowrap">
                 {currentView === 'ai-assistant' && <BrainCircuit className="text-emerald-600" />}
-                {navItems.find(i => i.id === currentView)?.label || 'Panel'}
+                {navItems.find(i => i.id === currentView)?.label.replace(/^\d\.\s/, '') || 'Panel'}
               </h2>
+              
+              {/* Workflow Stepper */}
+              {(currentView === 'clients' || currentView === 'budgets' || currentView === 'contracts') && (
+                <div className="flex items-center gap-2 bg-slate-50 px-4 py-1.5 rounded-full border border-slate-200">
+                  <div className={`flex items-center gap-1.5 ${currentView === 'clients' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${currentView === 'clients' ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'}`}>1</div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Cliente</span>
+                  </div>
+                  <div className="w-4 h-px bg-slate-300"></div>
+                  <div className={`flex items-center gap-1.5 ${currentView === 'budgets' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${currentView === 'budgets' ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'}`}>2</div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Cotización</span>
+                  </div>
+                  <div className="w-4 h-px bg-slate-300"></div>
+                  <div className={`flex items-center gap-1.5 ${currentView === 'contracts' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${currentView === 'contracts' ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'}`}>3</div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Contrato</span>
+                  </div>
+                </div>
+              )}
           </div>
           <div className="flex items-center space-x-6">
             <button className="relative text-slate-400 hover:text-slate-600 transition">

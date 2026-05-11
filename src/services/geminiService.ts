@@ -34,40 +34,34 @@ export const generateContractText = async (
   lugarSuscripcion: string = 'Osorno'
 ): Promise<string> => {
   try {
-    const ai = getGeminiClient();
-
-    const systemInstruction = `
+    const ai = getGeminiClient();    const systemInstruction = `
     Eres un abogado experto en contratos inmobiliarios y de construcción para la empresa "MADECAS".
     
-    TU OBJETIVO: Redactar un CONTRATO DE COMPRAVENTA DE CASA PREFABRICADA siguiendo estrictamente el formato tradicional de MADECAS.
+    TU OBJETIVO: Redactar un CONTRATO DE COMPRAVENTA DE CASA PREFABRICADA siguiendo estrictamente el formato tradicional de MADECAS observado en sus documentos oficiales.
     
-    IMPORTANTE: DEBES INCLUIR LA CLÁUSULA "TERCERO" QUE A MENUDO SE OMITE.
+    CLAUSULAS ESTRUCTURALES DE MADECAS:
+    1. **PRIMERO:** El VENDEDOR es dueño del proyecto DE UNA CASA MODELO **${project.modelo}** DE **${project.superficie_m2} MT2** (Metros Cuadrados). Detallar materiales incluidos según especificación: Piso, Paneles Exteriores (OSB + Fieltro + Siding/Madera), Paneles Interiores, Cerchas, Techumbre, etc.
+    2. **DECLARACIONES DEL COMPRADOR (LOS 6 PUNTOS):** Mandatorio incluir los puntos de conocimiento sobre características, visitas a casa piloto, permisos de edificación (responsabilidad del cliente), cumplimiento de normativa local, planos guía y propiedad del terreno.
+    3. **SEGUNDO (Obligaciones Comprador):** Pago del precio, condiciones de descarga (camión debe llegar al punto), terreno nivelado, revisión de kit al recibir.
+    4. **CUARTO (Obligaciones Vendedor):** Plazo de entrega de materiales y servicio de montaje.
+    5. **QUINTO (La Venta):** Venta de bienes muebles señalados en cláusula primera.
+    6. **SEXTO (Precio y Forma de Pago - FORMATO ESTRICTO):** 
+       Valor total de **$${budget.monto_total.toLocaleString('es-CL')}**. 
+       Calendario de pagos (HITOS):
+       - 30% ($${(budget.monto_total * 0.3).toLocaleString('es-CL')}) a la firma (Transferencia CTA CTE ${vendor.banco_numero_cuenta} ${vendor.banco_nombre}).
+       - 30% ($${(budget.monto_total * 0.3).toLocaleString('es-CL')}) contra entrega de RADIER con arranques sanitarios.
+       - 30% ($${(budget.monto_total * 0.3).toLocaleString('es-CL')}) al momento de entrega de PANELES Y CERCHAS INSTALADAS.
+       - 10% ($${(budget.monto_total * 0.1).toLocaleString('es-CL')}) saldo final máximo 5 días hábiles después del montaje.
+    7. **SÉPTIMO (Montaje y Personal):** Personal se presenta el día **${startDate}**. Plazo de montaje estimado: ${plazoInstalacion} días hábiles bajo condiciones climáticas favorables.
+    8. **OCTAVO (Cláusula Penal):** 25% del valor total por incumplimiento.
+    9. **NOVENO y DÉCIMO:** Jurisdicción en **${lugarSuscripcion}** y firma en dos ejemplares.
     
     REGLAS DE FORMATO:
-    1. Usa formato Markdown limpio.
-    2. Mantén un tono legal formal (Chile).
-    3. Usa negritas (**texto**) para nombres, RUTs, fechas y montos.
-    
-    ESTRUCTURA DE CLÁUSULAS OBLIGATORIA:
-    
-    1. **PRIMERO (Objeto):** Venta de casa prefabricada modelo **${project.modelo}**. Detallar materiales.
-    2. **DECLARACIONES DEL COMPRADOR**
-    3. **SEGUNDO (Obligaciones Comprador)**
-    4. **TERCERO (Obligaciones Vendedor)**
-    5. **CUARTO (La Venta)**
-    6. **QUINTO (Precio):** Valor total de **$${budget.monto_total.toLocaleString('es-CL')}**.
-    7. **SEXTO (Forma de Pago):** Incluir datos bancarios: **${vendor.banco_nombre}**, **${vendor.banco_tipo_cuenta}**, N° **${vendor.banco_numero_cuenta}**. Desglosar hitos de pago.
-    8. **SÉPTIMO (Plazos):** Fecha de inicio de obra **${startDate}**. Mencionar que el vendedor tiene un plazo de **${plazoInstalacion} días hábiles** para el montaje.
-    9. **OCTAVO (Multa):** 25% del valor total.
-    10. **NOVENO (Jurisdicción):** Tribunales de **${lugarSuscripcion}**.
-    11. **DÉCIMO (Ejemplares)**
-    12. **UNDÉCIMO (Facultad)**
-    
-    INSTRUCCIONES DE CONTENIDO:
-    - La introducción debe decir: "En **${lugarSuscripcion}**, a **${new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}**..."
-    - Convierte montos a palabras (ej: $1.000.000 (UN MILLÓN DE PESOS)).
+    1. Markdown limpio. Usa negritas para Cláusulas y Datos Clave.
+    2. Tono formal, legal, respetuoso.
+    3. Asegúrate de que el nombre del modelo y m2 aparezcan en la primera cláusula.
+    4. Montos siempre acompañados de su versión en palabras (ej: $5.000.000 (CINCO MILLONES DE PESOS)).
     `;
-
     const prompt = `
     Genera el contrato con los siguientes datos:
     VENDEDOR: ${vendor.nombre}, RUT ${vendor.rut}, Rep: ${vendor.nombre === 'COMERCIALIZADORA MADECAS SPA' ? 'EDUARDO HUMBERTO SOTO ALVARADO' : 'Representante Legal'}, Domicilio: ${vendor.domicilio}.

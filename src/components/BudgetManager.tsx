@@ -52,28 +52,29 @@ const BudgetManager: React.FC = () => {
     setClients(getClients());
     setProjects(getProjects());
 
-    // Check for pending quote from catalog
+    // Check for pending quote from catalog or client manager
     const pendingProjectId = window.localStorage.getItem('pending_quote_project_id');
-    if (pendingProjectId) {
-      window.localStorage.removeItem('pending_quote_project_id');
+    const pendingClientId = window.localStorage.getItem('pending_quote_client_id');
+
+    if (pendingProjectId || pendingClientId) {
+      if (pendingProjectId) window.localStorage.removeItem('pending_quote_project_id');
+      if (pendingClientId) window.localStorage.removeItem('pending_quote_client_id');
       
-      // Auto-start a new budget with this project
       const allProjects = getProjects();
-      const proj = allProjects.find(p => p.id === pendingProjectId);
+      const proj = pendingProjectId ? allProjects.find(p => p.id === pendingProjectId) : null;
       
-      if (proj) {
-        setFormData({
-            id: crypto.randomUUID(),
-            cliente_id: '',
-            proyecto_id: proj.id,
-            fecha: new Date().toISOString().split('T')[0],
-            detalle_items: proj.especificaciones_default || [],
-            monto_total: proj.precio_base || 0,
-            plazo_instalacion_dias: 30,
-            lugar_suscripcion: 'Osorno'
-        });
-        setIsEditing(true);
-      }
+      setFormData(prev => ({
+          ...prev,
+          id: crypto.randomUUID(),
+          cliente_id: pendingClientId || '',
+          proyecto_id: proj ? proj.id : '',
+          fecha: new Date().toISOString().split('T')[0],
+          detalle_items: proj ? (proj.especificaciones_default || []) : [],
+          monto_total: proj ? (proj.precio_base || 0) : 0,
+          plazo_instalacion_dias: 30,
+          lugar_suscripcion: 'Osorno'
+      }));
+      setIsEditing(true);
     }
   }, []);
 
@@ -211,9 +212,17 @@ const BudgetManager: React.FC = () => {
     saveBudget(formData);
     setBudgets(getBudgets());
     setIsEditing(false);
-    window.dispatchEvent(new CustomEvent('app-notification', { 
+    
+    const notificationEvent = new CustomEvent('app-notification', { 
         detail: { message: 'Presupuesto guardado correctamente', type: 'success' } 
-    }));
+    });
+    window.dispatchEvent(notificationEvent);
+
+    // Ask if they want to go to contract
+    if (confirm("¿Deseas proceder a generar el contrato para este presupuesto?")) {
+        window.localStorage.setItem('pending_contract_budget_id', formData.id);
+        window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'contracts' }));
+    }
   };
 
   const handleSaveAsModel = () => {
@@ -335,7 +344,7 @@ const BudgetManager: React.FC = () => {
                   });
                 }}>
                 <option value="">Seleccione Modelo...</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.modelo} (${p.precio_base?.toLocaleString()})</option>)}
+                {projects.map(p => <option key={p.id} value={p.id}>{p.modelo} ({p.superficie_m2} m²) - ${p.precio_base?.toLocaleString()}</option>)}
               </select>
             </div>
             <div>

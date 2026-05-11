@@ -7,34 +7,29 @@ import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, E
 
 // --- MADECAS LOGO SVG ---
 const MADECAS_LOGO_SVG = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100" class="w-full h-full">
-  <g fill="none" stroke="#e2e8f0" stroke-width="2">
-     <circle cx="150" cy="50" r="45" fill="none" stroke="#e2e8f0" stroke-width="2" />
-     <path d="M150 15 L180 40 L120 40 Z" fill="none" stroke="#e2e8f0" />
-     <rect x="130" y="40" width="40" height="30" fill="none" stroke="#e2e8f0" />
-  </g>
-  <text x="150" y="55" font-family="Times New Roman, serif" font-size="20" font-weight="bold" fill="#cbd5e1" text-anchor="middle" letter-spacing="1">MADECAS</text>
-  <text x="150" y="85" font-family="Times New Roman, serif" font-size="12" fill="#cbd5e1" text-anchor="middle" letter-spacing="2" text-transform="uppercase">Prefabricados</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="w-full h-full">
+  <circle cx="50" cy="50" r="48" fill="none" stroke="#143e18" stroke-width="1" opacity="0.2"/>
+  <text x="50" y="52" font-family="Times New Roman, serif" font-size="12" font-weight="bold" fill="#143e18" text-anchor="middle" letter-spacing="1" opacity="0.3">MADECAS</text>
 </svg>
 `;
 
 const MADECAS_LOGO_HEADER_SVG = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100">
-  <circle cx="150" cy="50" r="48" fill="none" stroke="#000" stroke-width="1.5" />
-  <path d="M150 20 L180 45 L120 45 Z" fill="#fff" stroke="#000" stroke-width="1.5"/>
-  <rect x="130" y="45" width="40" height="30" fill="#fff" stroke="#000" stroke-width="1.5"/>
-  <text x="150" y="40" font-family="Times New Roman, serif" font-size="8" font-weight="bold" fill="#000" text-anchor="middle">11.11.11.11</text>
-  <text x="150" y="65" font-family="Times New Roman, serif" font-size="18" font-weight="bold" fill="#000" text-anchor="middle">MADECAS</text>
-  <text x="150" y="80" font-family="Arial, sans-serif" font-size="5" fill="#000" text-anchor="middle" letter-spacing="1">WWW.MADECAS.CL</text>
-  <text x="150" y="88" font-family="Arial, sans-serif" font-size="4" fill="#000" text-anchor="middle">2013</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 140">
+  <circle cx="200" cy="50" r="45" fill="#fff" stroke="#143e18" stroke-width="2" />
+  <text x="200" y="55" font-family="Times New Roman, serif" font-size="16" font-weight="bold" fill="#143e18" text-anchor="middle">MADECAS</text>
+  <text x="200" y="85" font-family="Arial, sans-serif" font-size="6" fill="#143e18" text-anchor="middle">PREFABRICADOS</text>
+  
+  <text x="200" y="125" font-family="Times New Roman, serif" font-size="16" font-weight="bold" fill="#143e18" text-anchor="middle" letter-spacing="1">CONTRATO DE COMPRAVENTA</text>
+  <rect x="100" y="132" width="200" height="1" fill="#143e18" />
 </svg>
 `;
 
 const MADECAS_FOOTER_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 60" preserveAspectRatio="none">
   <rect x="0" y="0" width="800" height="60" fill="#143e18" />
-  <text x="400" y="35" font-family="Arial, sans-serif" font-size="32" font-weight="900" fill="#fff" text-anchor="middle" letter-spacing="2">MADECAS</text>
-  <text x="400" y="52" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#fff" text-anchor="middle" letter-spacing="8" text-transform="uppercase">PREFABRICADOS</text>
+  <path d="M0 0 L800 0 L800 5 L0 5 Z" fill="#1b5e20" />
+  <text x="400" y="32" font-family="Arial, sans-serif" font-size="20" font-weight="900" fill="#fff" text-anchor="middle" letter-spacing="4">MADECAS</text>
+  <text x="400" y="48" font-family="Arial, sans-serif" font-size="8" font-weight="400" fill="#fff" text-anchor="middle" letter-spacing="6" text-transform="uppercase">CALIDAD Y CONFIANZA EN SU HOGAR</text>
 </svg>
 `;
 
@@ -54,16 +49,16 @@ const ContractManager: React.FC = () => {
   const [plazoInstalacion, setPlazoInstalacion] = useState(30);
   const [lugarSuscripcion, setLugarSuscripcion] = useState('Osorno');
   const [metodoPago, setMetodoPago] = useState<Contract['metodo_pago']>('Transferencia');
-  const [numCuotas, setNumCuotas] = useState(1);
   const [payments, setPayments] = useState<PaymentInstallment[]>([
-    { descripcion: 'Firma de Contrato (Transferencia)', porcentaje: 30, monto: 0 },
-    { descripcion: 'Entrega Radier y Arranques', porcentaje: 30, monto: 0 },
-    { descripcion: 'Paneles y Cerchas Instaladas', porcentaje: 30, monto: 0 },
-    { descripcion: 'Contra Entrega (5 días hábiles)', porcentaje: 10, monto: 0 },
+    { descripcion: '30% - FIRMA DE CONTRATO (TRANSFERENCIA)', porcentaje: 30, monto: 0 },
+    { descripcion: '30% - ENTREGA DE RADIER CON ARRANQUES SANITARIOS', porcentaje: 30, monto: 0 },
+    { descripcion: '30% - MOMENTO DE ENTREGA PANELES Y CERCHAS INSTALADAS', porcentaje: 30, monto: 0 },
+    { descripcion: '10% - CONTRA ENTREGA FINAL (MAX 5 DÍAS HÁBILES)', porcentaje: 10, monto: 0 },
   ]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedText, setGeneratedText] = useState('');
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('preview');
+  const [editingContractId, setEditingContractId] = useState<string | null>(null);
 
   // Signing State
   const [signingContract, setSigningContract] = useState<Contract | null>(null);
@@ -82,6 +77,13 @@ const ContractManager: React.FC = () => {
     setClients(getClients());
     setProjects(getProjects());
     setVendor(getVendor());
+
+    // Check for pending contract from budget
+    const pendingBudgetId = window.localStorage.getItem('pending_contract_budget_id');
+    if (pendingBudgetId) {
+        window.localStorage.removeItem('pending_contract_budget_id');
+        setSelectedBudgetId(pendingBudgetId);
+    }
   }, []);
 
   useEffect(() => {
@@ -165,9 +167,9 @@ const ContractManager: React.FC = () => {
         if (day !== 0 && day !== 6) addedDays++; // Mon-Fri
     }
 
-    // Create the contract record with SNAPSHOTS to ensure historical data integrity
-    const newContract: Contract = {
-      id: crypto.randomUUID(),
+    // Create or update the contract record with SNAPSHOTS
+    const contractData: Contract = {
+      id: editingContractId || crypto.randomUUID(),
       cliente_id: selectedClient.id,
       vendedor_id: vendor.id,
       proyecto_id: selectedProject.id,
@@ -175,7 +177,7 @@ const ContractManager: React.FC = () => {
       fecha_contrato: new Date().toISOString().split('T')[0],
       monto_total: selectedBudget.monto_total,
       metodo_pago: metodoPago,
-      cuotas_pago: numCuotas,
+      cuotas_pago: payments.length,
       estado_pago: 'Pendiente',
       hitos_pago: payments,
       estado: ContractStatus.GENERATED,
@@ -187,15 +189,15 @@ const ContractManager: React.FC = () => {
       fecha_entrega_estimada: deliveryDate.toISOString().split('T')[0],
       lugar_suscripcion: lugarSuscripcion,
       
-      // Saving snapshots: If the client changes address later, the contract remains valid with original data
       cliente_snapshot: selectedClient,
       proyecto_snapshot: selectedProject,
       presupuesto_snapshot: selectedBudget
     };
 
-    saveContract(newContract);
+    saveContract(contractData);
     setContracts(getContracts());
     setIsCreating(false);
+    setEditingContractId(null);
     setSelectedBudgetId('');
     setGeneratedText('');
     setStartDate('');
@@ -213,6 +215,19 @@ const ContractManager: React.FC = () => {
             detail: { message: 'Contrato eliminado', type: 'info' } 
           }));
       }
+  };
+
+  const handleEditSavedContract = (contract: Contract) => {
+    setEditingContractId(contract.id);
+    setSelectedBudgetId(contract.presupuesto_id || '');
+    setGeneratedText(contract.contenido_texto);
+    setStartDate(contract.fecha_inicio_obra || '');
+    setPlazoInstalacion(contract.plazo_instalacion_dias || 30);
+    setLugarSuscripcion(contract.lugar_suscripcion || 'Osorno');
+    setMetodoPago(contract.metodo_pago);
+    setPayments(contract.hitos_pago);
+    setIsCreating(true);
+    setViewMode('edit');
   };
 
   // --- Payment Plan Editing Logic ---
@@ -656,32 +671,21 @@ const ContractManager: React.FC = () => {
           )}
 
           {selectedBudget && (
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4 animate-in slide-in-from-left-5">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 animate-in slide-in-from-left-5">
               <h3 className="text-lg font-bold text-slate-800">2.5 Condiciones de Venta</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Forma de Pago</label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Forma de Pago Base</label>
                   <select 
                     className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500"
                     value={metodoPago}
                     onChange={(e) => setMetodoPago(e.target.value as any)}
                   >
                     <option value="Contado">Contado</option>
-                    <option value="Transferencia">Transferencia</option>
+                    <option value="Transferencia">Transferencia Bancaria</option>
                     <option value="Crédito Directo">Crédito Directo</option>
                     <option value="Crédito Hipotecario">Crédito Hipotecario</option>
                   </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">N° Cuotas</label>
-                  <input 
-                    type="number"
-                    min="1"
-                    max="120"
-                    className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-                    value={numCuotas}
-                    onChange={(e) => setNumCuotas(parseInt(e.target.value) || 1)}
-                  />
                 </div>
               </div>
             </div>
@@ -813,64 +817,68 @@ const ContractManager: React.FC = () => {
 
           {/* Canvas / Paper Area */}
           <div className="flex-1 overflow-auto p-8 flex justify-center bg-slate-200/50">
-            {!selectedBudgetId && (
-              <div className="flex flex-col items-center justify-center text-slate-400 mt-20 p-8 text-center animate-in zoom-in-95">
-                <div className="w-20 h-20 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center mb-6">
-                    <Calculator size={40} />
-                </div>
-                <h3 className="text-xl font-bold text-slate-800 mb-2">Paso 1: Selecciona un Presupuesto</h3>
-                <p className="text-sm max-w-xs text-center mt-2 text-slate-500 leading-relaxed mb-6">
-                    El contrato se genera a partir de un presupuesto aprobado por el cliente. Selecciona uno a la izquierda para comenzar.
-                </p>
-                <button 
-                  onClick={() => window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }))}
-                  className="px-5 py-2.5 bg-slate-800 text-white rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-slate-900 transition shadow-lg shadow-slate-200"
-                >
-                    Ir a Análisis de Costos <ArrowRight size={18} />
-                </button>
+            {viewMode === 'edit' ? (
+                generatedText && (
+                  <div className="w-full max-w-[210mm] animate-in zoom-in-95">
+                      <textarea 
+                          className="w-full h-full min-h-[850px] p-12 bg-white shadow-2xl rounded-none border-none outline-none font-mono text-sm leading-relaxed resize-none text-slate-800"
+                          value={generatedText}
+                          onChange={(e) => setGeneratedText(e.target.value)}
+                          placeholder="Edita el cuerpo del contrato aquí..."
+                      />
+                  </div>
+                )
+            ) : (
+              <div className="flex flex-col items-center w-full">
+                {!selectedBudgetId && (
+                  <div className="flex flex-col items-center justify-center text-slate-400 mt-20 p-8 text-center animate-in zoom-in-95">
+                    <div className="w-20 h-20 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center mb-6">
+                        <Calculator size={40} />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-800 mb-2">Paso 1: Selecciona un Presupuesto</h3>
+                    <p className="text-sm max-w-xs text-center mt-2 text-slate-500 leading-relaxed mb-6">
+                        El contrato se genera a partir de un presupuesto aprobado por el cliente. Selecciona uno a la izquierda para comenzar.
+                    </p>
+                    <button 
+                      onClick={() => window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }))}
+                      className="px-5 py-2.5 bg-slate-800 text-white rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-slate-900 transition shadow-lg shadow-slate-200"
+                    >
+                        Ir a Análisis de Costos <ArrowRight size={18} />
+                    </button>
+                  </div>
+                )}
+
+                {selectedBudgetId && !generatedText && (
+                  <div className="flex flex-col items-center justify-center text-slate-400 mt-20 animate-in fade-in duration-700">
+                    <FileType size={64} className="mb-4 opacity-20 text-emerald-600" />
+                    <p className="text-lg font-bold text-slate-600">Presupuesto Cargado</p>
+                    <p className="text-sm max-w-xs text-center mt-2 opacity-70">Revisa los plazos y pagos a la izquierda, luego haz clic en "Generar Contrato".</p>
+                  </div>
+                )}
+
+                {generatedText && (
+                    <div className="paper-a4 animate-in zoom-in-95 duration-300">
+                        <div className="watermark-container">
+                            <div dangerouslySetInnerHTML={{ __html: MADECAS_LOGO_SVG }} />
+                        </div>
+                        
+                        {/* Header for preview only */}
+                        <div className="flex justify-center mb-8">
+                             <div className="h-20 w-64" dangerouslySetInnerHTML={{ __html: MADECAS_LOGO_HEADER_SVG }} />
+                        </div>
+
+                        <div 
+                            className="contract-content text-[11pt] leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: formatTextToHtml(generatedText) }}
+                        />
+
+                        {/* Footer for preview only */}
+                        <div className="mt-16">
+                            <div className="h-10 w-full" dangerouslySetInnerHTML={{ __html: MADECAS_FOOTER_SVG }} />
+                        </div>
+                    </div>
+                )}
               </div>
-            )}
-
-            {selectedBudgetId && !generatedText && (
-              <div className="flex flex-col items-center justify-center text-slate-400 mt-20 animate-in fade-in duration-700">
-                <FileType size={64} className="mb-4 opacity-20 text-emerald-600" />
-                <p className="text-lg font-bold text-slate-600">Presupuesto Cargado</p>
-                <p className="text-sm max-w-xs text-center mt-2 opacity-70">Revisa los plazos y pagos a la izquierda, luego haz clic en "Generar Contrato".</p>
-              </div>
-            )}
-
-            {generatedText && viewMode === 'edit' && (
-                <div className="w-full max-w-[210mm] h-full bg-white shadow-sm border border-slate-300 rounded-lg overflow-hidden">
-                    <textarea 
-                        className="w-full h-full p-8 font-mono text-sm leading-relaxed outline-none resize-none text-slate-800 bg-white"
-                        value={generatedText}
-                        onChange={(e) => setGeneratedText(e.target.value)}
-                        placeholder="Edición manual..."
-                    />
-                </div>
-            )}
-
-            {generatedText && viewMode === 'preview' && (
-                <div className="paper-a4 animate-in zoom-in-95 duration-300">
-                    <div className="watermark-container">
-                        <div dangerouslySetInnerHTML={{ __html: MADECAS_LOGO_SVG }} />
-                    </div>
-                    
-                    {/* Header for preview only */}
-                    <div className="flex justify-center mb-8">
-                         <div className="h-20 w-64" dangerouslySetInnerHTML={{ __html: MADECAS_LOGO_HEADER_SVG }} />
-                    </div>
-
-                    <div 
-                        className="contract-content text-[11pt] leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: formatTextToHtml(generatedText) }}
-                    />
-
-                    {/* Footer for preview only */}
-                    <div className="mt-16">
-                        <div className="h-10 w-full" dangerouslySetInnerHTML={{ __html: MADECAS_FOOTER_SVG }} />
-                    </div>
-                </div>
             )}
           </div>
         </div>
@@ -998,6 +1006,13 @@ const ContractManager: React.FC = () => {
                         </div>
 
                         <div className="flex gap-2 border-l pl-4 border-slate-100 ml-2">
+                            <button 
+                            className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition"
+                            onClick={() => handleEditSavedContract(contract)}
+                            title="Editar Datos"
+                            >
+                                <Edit3 size={20} />
+                            </button>
                             <button 
                             className="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition"
                             onClick={() => printContract(contract)}

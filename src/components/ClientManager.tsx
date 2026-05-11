@@ -49,9 +49,15 @@ const ClientManager: React.FC = () => {
         detail: { message: 'Cliente guardado correctamente', type: 'success' } 
     });
     window.dispatchEvent(event);
+
+    if (confirm("¿Deseas pasar a la etapa de Cotización para este cliente?")) {
+        window.localStorage.setItem('pending_quote_client_id', formData.id);
+        window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }));
+    }
   };
 
-  const handleEdit = (client: Client) => {
+  const handleEdit = (client: Client, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setFormData(client);
     setIsEditing(true);
   };
@@ -162,16 +168,25 @@ const ClientManager: React.FC = () => {
           </div>
         )}
         {filteredClients.map(client => (
-          <div key={client.id} onClick={() => handleEdit(client)} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-emerald-400 hover:shadow-md cursor-pointer transition-all group relative overflow-hidden">
+          <div key={client.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-emerald-400 hover:shadow-md transition-all group relative overflow-hidden">
             <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
             
-            <button 
-                onClick={(e) => handleDelete(client.id, e)}
-                className="absolute top-3 right-3 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition z-10"
-                title="Eliminar Cliente"
-            >
-                <Trash2 size={18} />
-            </button>
+            <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition z-10">
+                <button 
+                    onClick={(e) => handleEdit(client, e)}
+                    className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition"
+                    title="Editar Manualmente"
+                >
+                    <Plus size={18} className="rotate-45" /> 
+                </button>
+                <button 
+                    onClick={(e) => handleDelete(client.id, e)}
+                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                    title="Eliminar Cliente"
+                >
+                    <Trash2 size={18} />
+                </button>
+            </div>
 
             <div className="flex items-center gap-4 mb-4 relative z-0">
               <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 group-hover:bg-emerald-100 group-hover:text-emerald-600 transition-colors">
@@ -193,11 +208,24 @@ const ClientManager: React.FC = () => {
               <div className="flex items-center gap-3 text-sm text-slate-600">
                  <MapPin size={14} className="text-slate-400 shrink-0" /> <span className="truncate">{client.domicilio}</span>
               </div>
-              {client.location && (
-                <div className="flex items-center gap-2 mt-2 px-2 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded border border-emerald-100 w-fit">
-                  <MapIcon size={10} /> GEOREFERENCIADO
-                </div>
-              )}
+            </div>
+
+            <div className="mt-4 flex gap-2">
+                <button 
+                  onClick={() => handleEdit(client)}
+                  className="flex-1 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+                >
+                    Editar Datos
+                </button>
+                <button 
+                  onClick={() => {
+                    window.localStorage.setItem('pending_quote_client_id', client.id);
+                    window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }));
+                  }}
+                  className="flex-1 py-2 text-[10px] font-bold uppercase tracking-wider text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition"
+                >
+                    Iniciar Cotización
+                </button>
             </div>
           </div>
         ))}
