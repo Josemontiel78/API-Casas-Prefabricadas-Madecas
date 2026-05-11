@@ -582,7 +582,7 @@ const ContractManager: React.FC = () => {
                     top: 0; left: 0;
                     width: 100%; height: 100%;
                     object-fit: cover;
-                    opacity: 0.2; /* Better visibility as requested */
+                    opacity: 0.16; /* 20% softer than 0.2 for better text readability */
                     filter: saturate(0.5) brightness(1.1);
                     z-index: -20;
                 }
@@ -1024,7 +1024,7 @@ const ContractManager: React.FC = () => {
                             <img 
                                 src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&q=80&w=2000" 
                                 className="paper-bg-image" 
-                                style={{ opacity: 0.2, filter: 'saturate(0.5) brightness(1.1)' }}
+                                style={{ opacity: 0.16, filter: 'saturate(0.5) brightness(1.1)' }}
                                 alt="Background"
                                 onError={(e) => (e.currentTarget.style.display = 'none')}
                             />
