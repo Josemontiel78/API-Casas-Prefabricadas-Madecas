@@ -474,22 +474,39 @@ const ContractManager: React.FC = () => {
                 }
                 .watermark {
                     position: fixed; 
-                    /* Compensate for @page margins to center on physical page */
-                    top: -35mm; 
-                    left: -20mm; 
+                    top: 0; left: 0; 
                     width: 210mm; 
                     height: 297mm;
                     z-index: -10;
                     display: flex; justify-content: center; align-items: center;
-                    opacity: 0.1;
+                    opacity: 0.12;
+                }
+                .bg-image {
+                    position: fixed;
+                    top: 0; left: 0;
+                    width: 100%; height: 100%;
+                    object-fit: cover;
+                    opacity: 0.05;
+                    z-index: -20;
                 }
                 
                 /* Content Styles */
                 p { 
-                    margin-bottom: 12px; line-height: 1.5; 
-                    text-align: justify; text-justify: inter-word; font-size: 11pt;
-                    page-break-inside: avoid;
+                    margin-bottom: 12px; line-height: 1.6; 
+                    text-align: justify; text-justify: inter-word; font-size: 11.5pt;
+                    page-break-inside: auto;
                     widows: 3; orphans: 3;
+                }
+                .page-counter {
+                    position: fixed;
+                    bottom: 20mm;
+                    right: 20mm;
+                    font-size: 9pt;
+                    color: #999;
+                    z-index: 50;
+                }
+                .page-counter:after {
+                    content: "Página " counter(page);
                 }
                 li { text-align: justify; text-justify: inter-word; page-break-inside: avoid; }
                 h1 { text-align: center; text-transform: uppercase; font-size: 14pt; margin-bottom: 20px; page-break-after: avoid; }
@@ -552,9 +569,13 @@ const ContractManager: React.FC = () => {
               </style>
             </head>
             <body>
+              <div class="bg-image">
+                 <img src="https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&q=80&w=2000" style="width: 100%; height: 100%; object-fit: cover;" />
+              </div>
               <div class="watermark">
                  <img src="${encodedWatermark}" style="width: 80%; opacity: 0.5;" />
               </div>
+              <div class="page-counter"></div>
 
               <div class="header">
                  <img src="${encodedLogo}" height="70" />
@@ -857,24 +878,44 @@ const ContractManager: React.FC = () => {
                 )}
 
                 {generatedText && (
-                    <div className="paper-a4 animate-in zoom-in-95 duration-300">
-                        <div className="watermark-container">
-                            <div dangerouslySetInnerHTML={{ __html: MADECAS_LOGO_SVG }} />
-                        </div>
-                        
-                        {/* Header for preview only */}
-                        <div className="flex justify-center mb-8">
-                             <div className="h-20 w-64" dangerouslySetInnerHTML={{ __html: MADECAS_LOGO_HEADER_SVG }} />
-                        </div>
+                    <div className="flex flex-col gap-8 pb-20 printable-area">
+                        {/* We'll simulate pages by trying to break the content. 
+                            Since we can't perfectly calculate height in React before render, 
+                            we'll provide a 'View as Book' or just multiple pages if the text is long enough.
+                            For now, we'll use a single container that visually breaks, but for print it uses @page.
+                        */}
+                        <div className="paper-a4 animate-in zoom-in-95 duration-300">
+                             {/* Background Image softened */}
+                            <img 
+                                src="https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&q=80&w=2000" 
+                                className="paper-bg-image" 
+                                alt="Background"
+                                onError={(e) => (e.currentTarget.style.display = 'none')}
+                            />
+                            
+                            <div className="watermark-container">
+                                <div dangerouslySetInnerHTML={{ __html: MADECAS_LOGO_SVG }} />
+                            </div>
+                            
+                            {/* Header */}
+                            <div className="flex justify-center mb-10 relative z-10">
+                                 <div className="h-24 w-72" dangerouslySetInnerHTML={{ __html: MADECAS_LOGO_HEADER_SVG }} />
+                            </div>
 
-                        <div 
-                            className="contract-content text-[11pt] leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: formatTextToHtml(generatedText) }}
-                        />
+                            <div 
+                                className="contract-content text-[11.5pt] leading-relaxed relative z-10 flex-1"
+                                dangerouslySetInnerHTML={{ __html: formatTextToHtml(generatedText) }}
+                            />
 
-                        {/* Footer for preview only */}
-                        <div className="mt-16">
-                            <div className="h-10 w-full" dangerouslySetInnerHTML={{ __html: MADECAS_FOOTER_SVG }} />
+                            {/* Footer / Pagination Placeholder */}
+                            <div className="contract-page-footer relative z-10">
+                                <div className="font-bold text-slate-400">MADECAS PREFABRICADOS</div>
+                                <div className="font-mono text-slate-400">Página 1 de 1</div>
+                            </div>
+
+                            <div className="mt-16 sticky bottom-0 relative z-10">
+                                <div className="h-12 w-full" dangerouslySetInnerHTML={{ __html: MADECAS_FOOTER_SVG }} />
+                            </div>
                         </div>
                     </div>
                 )}
