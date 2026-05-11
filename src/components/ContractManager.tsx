@@ -45,6 +45,7 @@ const ContractManager: React.FC = () => {
 
   // Form State
   const [selectedBudgetId, setSelectedBudgetId] = useState('');
+  const [contractDate, setContractDate] = useState(new Date().toISOString().split('T')[0]);
   const [startDate, setStartDate] = useState('');
   const [plazoInstalacion, setPlazoInstalacion] = useState(30);
   const [lugarSuscripcion, setLugarSuscripcion] = useState('Osorno');
@@ -141,6 +142,25 @@ const ContractManager: React.FC = () => {
         lugarSuscripcion
     );
     
+    // Add date line at the top if missing or adjust it
+    const dateObj = new Date(contractDate);
+    const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const dateStringLiteral = `${dateObj.getDate()} de ${months[dateObj.getMonth()]} de ${dateObj.getFullYear()}`;
+    const dateShort = `${dateObj.getMonth() + 1}/${dateObj.getDate()}/${dateObj.getFullYear()}`;
+    
+    let finalText = text;
+    if (finalText.includes('[FECHA_LARGA]')) {
+        finalText = finalText.replace('[FECHA_LARGA]', `${dateShort} ${dateStringLiteral}`);
+    } else if (finalText.includes('[FECHA]')) {
+         finalText = finalText.replace('[FECHA]', `${dateShort} ${dateStringLiteral}`);
+    }
+    
+    if (finalText.includes('[FECHA_INICIO]')) {
+        const startObj = new Date(startDate);
+        const startString = `${startObj.getDate()} de ${months[startObj.getMonth()]} de ${startObj.getFullYear()}`;
+        finalText = finalText.replace('[FECHA_INICIO]', startString);
+    }
+
     if (text.startsWith("Error de conexión con IA")) {
         let msg = 'Error al generar contrato con IA';
         if (text.includes('ERROR_CONFIG')) msg = 'API KEY de Gemini no configurada en el servidor.';
@@ -176,7 +196,7 @@ const ContractManager: React.FC = () => {
       vendedor_id: vendor.id,
       proyecto_id: selectedProject.id,
       presupuesto_id: selectedBudget.id,
-      fecha_contrato: new Date().toISOString().split('T')[0],
+      fecha_contrato: contractDate,
       monto_total: selectedBudget.monto_total,
       metodo_pago: metodoPago,
       cuotas_pago: payments.length,
@@ -223,6 +243,7 @@ const ContractManager: React.FC = () => {
     setEditingContractId(contract.id);
     setSelectedBudgetId(contract.presupuesto_id || '');
     setGeneratedText(contract.contenido_texto);
+    setContractDate(contract.fecha_contrato);
     setStartDate(contract.fecha_inicio_obra || '');
     setPlazoInstalacion(contract.plazo_instalacion_dias || 30);
     setLugarSuscripcion(contract.lugar_suscripcion || 'Osorno');
@@ -413,8 +434,13 @@ const ContractManager: React.FC = () => {
         // Standard Paragraphs - JUSTIFIED
         // We replace single newlines within a paragraph with a space to let the browser justify the full block
         const cleanContent = content.replace(/\n/g, ' ');
-        // Added page-break-inside: avoid to prevent cutting
-        return `<p style="text-align: justify; margin-bottom: 12px; line-height: 1.5; text-justify: inter-word; page-break-inside: avoid;">${cleanContent}</p>`;
+        
+        // Detect headers like "PRIMERO:", "SEGUNDO:", etc. and make them bold+large
+        if (/^(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO PRIMERO):/.test(cleanContent)) {
+             return `<p style="text-align: justify; margin-bottom: 15px; line-height: 1.6; font-weight: bold; font-size: 12pt; text-transform: uppercase;">${cleanContent}</p>`;
+        }
+
+        return `<p style="text-align: justify; margin-bottom: 12px; line-height: 1.6; text-justify: inter-word; page-break-inside: auto;">${cleanContent}</p>`;
     }).join('');
   };
 
@@ -526,7 +552,8 @@ const ContractManager: React.FC = () => {
                     top: 0; left: 0;
                     width: 100%; height: 100%;
                     object-fit: cover;
-                    opacity: 0.05;
+                    opacity: 0.03; /* Softened as requested */
+                    filter: saturate(0.5) brightness(1.1);
                     z-index: -20;
                 }
                 
@@ -610,10 +637,10 @@ const ContractManager: React.FC = () => {
             </head>
             <body>
               <div class="bg-image">
-                 <img src="https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&q=80&w=2000" style="width: 100%; height: 100%; object-fit: cover;" />
+                 <img src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&q=80&w=2000" style="width: 100%; height: 100%; object-fit: cover;" />
               </div>
               <div class="watermark">
-                 <img src="${encodedWatermark}" style="width: 80%; opacity: 0.5;" />
+                 <img src="${encodedWatermark}" style="width: 70%; opacity: 0.3;" />
               </div>
               <div class="page-counter"></div>
 
@@ -881,6 +908,17 @@ const ContractManager: React.FC = () => {
             {viewMode === 'edit' ? (
                 generatedText && (
                   <div className="w-full max-w-[210mm] animate-in zoom-in-95">
+                      <div className="bg-white p-6 mb-4 rounded-xl border border-slate-200 flex items-center justify-between">
+                          <div className="flex flex-col">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Fecha del Contrato</label>
+                              <input 
+                                type="date" 
+                                className="border-none p-0 font-bold text-slate-800 outline-none focus:ring-0" 
+                                value={contractDate} 
+                                onChange={(e) => setContractDate(e.target.value)} 
+                              />
+                          </div>
+                      </div>
                       <textarea 
                           className="w-full h-full min-h-[850px] p-12 bg-white shadow-2xl rounded-none border-none outline-none font-mono text-sm leading-relaxed resize-none text-slate-800"
                           value={generatedText}
@@ -927,8 +965,9 @@ const ContractManager: React.FC = () => {
                         <div className="paper-a4 animate-in zoom-in-95 duration-300">
                              {/* Background Image softened */}
                             <img 
-                                src="https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&q=80&w=2000" 
+                                src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&q=80&w=2000" 
                                 className="paper-bg-image" 
+                                style={{ opacity: 0.02, filter: 'saturate(0) brightness(1.2)' }}
                                 alt="Background"
                                 onError={(e) => (e.currentTarget.style.display = 'none')}
                             />

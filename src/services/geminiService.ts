@@ -37,30 +37,37 @@ export const generateContractText = async (
     const ai = getGeminiClient();    const systemInstruction = `
     Eres un abogado experto en contratos inmobiliarios y de construcción para la empresa "MADECAS".
     
-    TU OBJETIVO: Redactar un CONTRATO DE COMPRAVENTA DE CASA PREFABRICADA siguiendo estrictamente el formato tradicional de MADECAS observado en sus documentos oficiales.
+    TU OBJETIVO: Redactar un "CONTRATO DE COMPRAVENTA" siguiendo estrictamente el tono y estructura observada en los documentos oficiales de la empresa.
     
-    CLAUSULAS ESTRUCTURALES DE MADECAS:
-    1. **PRIMERO:** El VENDEDOR es dueño del proyecto DE UNA CASA MODELO **${project.modelo}** DE **${project.superficie_m2} MT2** (Metros Cuadrados). Detallar materiales incluidos según especificación: Piso, Paneles Exteriores (OSB + Fieltro + Siding/Madera), Paneles Interiores, Cerchas, Techumbre, etc.
-    2. **DECLARACIONES DEL COMPRADOR (LOS 6 PUNTOS):** Mandatorio incluir los puntos de conocimiento sobre características, visitas a casa piloto, permisos de edificación (responsabilidad del cliente), cumplimiento de normativa local, planos guía y propiedad del terreno.
-    3. **SEGUNDO (Obligaciones Comprador):** Pago del precio, condiciones de descarga (camión debe llegar al punto), terreno nivelado, revisión de kit al recibir.
-    4. **CUARTO (Obligaciones Vendedor):** Plazo de entrega de materiales y servicio de montaje.
-    5. **QUINTO (La Venta):** Venta de bienes muebles señalados en cláusula primera.
-    6. **SEXTO (Precio y Forma de Pago - FORMATO ESTRICTO):** 
-       Valor total de **$${budget.monto_total.toLocaleString('es-CL')}**. 
-       Calendario de pagos (HITOS):
-       - 30% ($${(budget.monto_total * 0.3).toLocaleString('es-CL')}) a la firma (Transferencia CTA CTE ${vendor.banco_numero_cuenta} ${vendor.banco_nombre}).
-       - 30% ($${(budget.monto_total * 0.3).toLocaleString('es-CL')}) contra entrega de RADIER con arranques sanitarios.
-       - 30% ($${(budget.monto_total * 0.3).toLocaleString('es-CL')}) al momento de entrega de PANELES Y CERCHAS INSTALADAS.
-       - 10% ($${(budget.monto_total * 0.1).toLocaleString('es-CL')}) saldo final máximo 5 días hábiles después del montaje.
-    7. **SÉPTIMO (Montaje y Personal):** Personal se presenta el día **${startDate}**. Plazo de montaje estimado: ${plazoInstalacion} días hábiles bajo condiciones climáticas favorables.
-    8. **OCTAVO (Cláusula Penal):** 25% del valor total por incumplimiento.
-    9. **NOVENO y DÉCIMO:** Jurisdicción en **${lugarSuscripcion}** y firma en dos ejemplares.
+    ESTRUCTURA OBLIGATORIA DEL DOCUMENTO:
+    
+    1. **ENCABEZADO:** 
+       - Título: "CONTRATO DE COMPRAVENTA" (Centrado).
+       - Línea de Identificación de Partes: "COMERCIALIZADORA MADECAS SPA Y SR/A [NOMBRE CLIENTE]"
+    
+    2. **PÁRRAFO DE INTRODUCCIÓN:**
+       - Formato: "En [LUGAR], a [FECHA_LARGA], entre COMERCIALIZADORA MADECAS SPA, del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 77.300.759-4 representada por SR EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2 TELEFONO: +569 7777 00 22, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Ciudad de Osorno, comuna de Osorno, X REGION, en adelante “EL VENDEDOR”, por una parte; y , por la otra, don (a) [NOMBRE CLIENTE] RUT: [RUT CLIENTE], DOMICILIADO EN [DOMICILIO], TELÉFONO: [TELEFONO], CORREO ELECTRONICO: [CORREO], en adelante “EL COMPRADOR”, han convenido en celebrar el siguiente Contrato de Compraventa:"
+    
+    3. **CLÁUSULAS (Usar números ordinales en mayúsculas: PRIMERO, SEGUNDO, etc.):**
+       - **PRIMERO:** "EL VENDEDOR es dueño del proyecto DE UNA CASA MODELO [MODELO] DE [M2] MT2 EL CUAL SERÁ ADQUIRIDO POR EL COMPRADOR PARA SER INSTALADO EN TERRENO DE SU PROPIEDAD, UBICADO EN SU DOMICILIO."
+       - **ESPECIFICACIONES TÉCNICAS (Basadas en el proyecto):** Listar con guiones (-) según el PDF de muestra: PISO, PANELES EXTERIORES, PANELES INTERIORES, CERCHAS, COSTANERAS, TECHUMBRE, PUERTAS, VENTANAS, ADICIONALES.
+       - **DECLARACIONES DEL COMPRADOR:** Incluir la sección "Del mismo el COMPRADOR declara" con los puntos sobre conocimiento de materiales, visita a piloto, permisos (responsabilidad del cliente), planos, propiedad del terreno.
+       - **SEGUNDO (Obligaciones Comprador):** Pago del precio, condiciones de recepción de materiales, entrada adecuada para camiones, nivelación de terreno.
+       - **CUARTO (Obligaciones Vendedor):** Entrega de servicio según contrato, respeto a plazos.
+       - **QUINTO:** Transferencia de propiedad de bienes muebles.
+       - **SEXTO (Precio y Pago - CRÍTICO):** Valor total en números y palabras. Detalle de HITOS de pago según el 30%-30%-30%-10% observado:
+         d) 30% a la firma (Transferencia CTA CTE 81500255536 Banco Estado).
+         e) 30% avance ENTREGA DE RADIER CON ARRANQUES SANITARIOS.
+         f) 30% entrega de PANELES Y CERCHAS INSTALADAS.
+         g) 10% final máximo 5 días hábiles después de la entrega.
+       - **SÉPTIMO:** Inicio de obra en fecha [FECHA_INICIO].
+       - **OCTAVO:** Cláusula penal (25%).
+       - **NOVENO, DÉCIMO, DECIMO PRIMERO:** Jurisdicción, ejemplares y facultad de desarme por falta de pago.
     
     REGLAS DE FORMATO:
-    1. Markdown limpio. Usa negritas para Cláusulas y Datos Clave.
-    2. Tono formal, legal, respetuoso.
-    3. Asegúrate de que el nombre del modelo y m2 aparezcan en la primera cláusula.
-    4. Montos siempre acompañados de su versión en palabras (ej: $5.000.000 (CINCO MILLONES DE PESOS)).
+    - Markdown limpio. NO enumerar automáticamente (usa PRIMERO, SEGUNDO).
+    - El texto de los adicionales (SI/NO) debe imitar el formato del PDF (SI: ☒ NO: ☐).
+    - Montos siempre en números y palabras.
     `;
     const prompt = `
     Genera el contrato con los siguientes datos:
