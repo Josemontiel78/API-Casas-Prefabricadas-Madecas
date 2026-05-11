@@ -51,6 +51,30 @@ const BudgetManager: React.FC = () => {
     setBudgets(getBudgets());
     setClients(getClients());
     setProjects(getProjects());
+
+    // Check for pending quote from catalog
+    const pendingProjectId = window.localStorage.getItem('pending_quote_project_id');
+    if (pendingProjectId) {
+      window.localStorage.removeItem('pending_quote_project_id');
+      
+      // Auto-start a new budget with this project
+      const allProjects = getProjects();
+      const proj = allProjects.find(p => p.id === pendingProjectId);
+      
+      if (proj) {
+        setFormData({
+            id: crypto.randomUUID(),
+            cliente_id: '',
+            proyecto_id: proj.id,
+            fecha: new Date().toISOString().split('T')[0],
+            detalle_items: proj.especificaciones_default || [],
+            monto_total: proj.precio_base || 0,
+            plazo_instalacion_dias: 30,
+            lugar_suscripcion: 'Osorno'
+        });
+        setIsEditing(true);
+      }
+    }
   }, []);
 
   useEffect(() => {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Project, BudgetItem } from '@/types';
 import { getProjects, saveProject, deleteProject } from '@/services/db';
-import { Plus, Save, Home, Trash2, Search, Ruler, Layers } from 'lucide-react';
+import { Plus, Save, Home, Trash2, Search, Ruler, Layers, Calculator } from 'lucide-react';
 
 const ProjectManager: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -266,22 +266,30 @@ const ProjectManager: React.FC = () => {
               </div>
             </div>
             
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  <Layers size={12} /> Materialidad
+            <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    <Layers size={12} /> Materialidad
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                    {proj.materiales_principales.slice(0, 3).map((m, i) => (
+                        <span key={i} className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-md border border-slate-200">
+                            {m}
+                        </span>
+                    ))}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                  {proj.materiales_principales.slice(0, 3).map((m, i) => (
-                      <span key={i} className="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-md border border-slate-200">
-                          {m}
-                      </span>
-                  ))}
-                  {proj.materiales_principales.length > 3 && (
-                      <span className="bg-slate-50 text-slate-400 text-xs px-2 py-1 rounded-md border border-slate-100">
-                          +{proj.materiales_principales.length - 3} más
-                      </span>
-                  )}
-              </div>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }));
+                  window.localStorage.setItem('pending_quote_project_id', proj.id);
+                }}
+                className="bg-orange-600 text-white p-2 rounded-xl shadow-lg shadow-orange-100 hover:bg-orange-700 transition active:scale-95 group/btn"
+                title="Iniciar Cotización Directa"
+              >
+                <Calculator size={20} className="group-hover/btn:scale-110 transition" />
+              </button>
             </div>
           </div>
         ))}
