@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Client } from '@/types';
 import { getClients, saveClient, deleteClient } from '@/services/db';
-import { Plus, Search, Save, Users, Trash2, Phone, Mail, MapPin, Map as MapIcon } from 'lucide-react';
+import { Plus, Search, Save, Users, Trash2, Phone, Mail, MapPin, Map as MapIcon, Edit3 } from 'lucide-react';
 import MapProjectPicker from '@/components/MapProjectPicker';
 
 const ClientManager: React.FC = () => {
@@ -175,9 +175,9 @@ const ClientManager: React.FC = () => {
                 <button 
                     onClick={(e) => handleEdit(client, e)}
                     className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition"
-                    title="Editar Manualmente"
+                    title="Editar Cliente"
                 >
-                    <Plus size={18} className="rotate-45" /> 
+                    <Edit3 size={18} /> 
                 </button>
                 <button 
                     onClick={(e) => handleDelete(client.id, e)}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Project, BudgetItem } from '@/types';
 import { getProjects, saveProject, deleteProject } from '@/services/db';
-import { Plus, Save, Home, Trash2, Search, Ruler, Layers, Calculator } from 'lucide-react';
+import { Plus, Save, Home, Trash2, Search, Ruler, Layers, Calculator, Edit3 } from 'lucide-react';
 
 const ProjectManager: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -241,13 +241,26 @@ const ProjectManager: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredProjects.map(proj => (
           <div key={proj.id} onClick={() => {setFormData(proj); setIsEditing(true);}} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-400 hover:shadow-lg cursor-pointer transition-all group relative">
-            <button 
-                onClick={(e) => handleDelete(proj.id, e)}
-                className="absolute top-4 right-4 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition"
-                title="Eliminar Modelo"
-            >
-                <Trash2 size={18} />
-            </button>
+            <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition z-10">
+                <button 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setFormData(proj);
+                        setIsEditing(true);
+                    }}
+                    className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition"
+                    title="Editar Modelo"
+                >
+                    <Edit3 size={18} />
+                </button>
+                <button 
+                    onClick={(e) => handleDelete(proj.id, e)}
+                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                    title="Eliminar Modelo"
+                >
+                    <Trash2 size={18} />
+                </button>
+            </div>
             
             <div className="flex items-start gap-4 mb-4">
               <div className="p-3 bg-blue-50 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors">

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Budget, BudgetItem, Client, Project } from '@/types';
 import { getBudgets, saveBudget, getClients, getProjects, deleteBudget, saveProject } from '@/services/db';
 import { analyzeBudgetFile } from '@/services/geminiService';
-import { Plus, Save, Trash2, Calculator, Upload, Loader2, Eye, X, FileText, Search, ArrowRight, Maximize2 } from 'lucide-react';
+import { Plus, Save, Trash2, Calculator, Upload, Loader2, Eye, X, FileText, Search, ArrowRight, Maximize2, Edit3 } from 'lucide-react';
 
 const BudgetManager: React.FC = () => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
@@ -202,6 +202,12 @@ const BudgetManager: React.FC = () => {
       }
   };
 
+  const handleEdit = (budget: Budget, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFormData({ ...budget });
+    setIsEditing(true);
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.cliente_id || !formData.proyecto_id) {
@@ -210,7 +216,17 @@ const BudgetManager: React.FC = () => {
       }));
       return;
     }
+    
+    // Save budget
     saveBudget(formData);
+    
+    // Sync project surface if it was 0 in catalog
+    const project = projects.find(p => p.id === formData.proyecto_id);
+    if (project && project.superficie_m2 === 0 && formData.superficie_m2 && formData.superficie_m2 > 0) {
+      saveProject({ ...project, superficie_m2: formData.superficie_m2 });
+      setProjects(getProjects());
+    }
+
     setBudgets(getBudgets());
     setIsEditing(false);
     
@@ -341,11 +357,24 @@ const BudgetManager: React.FC = () => {
                     ...formData, 
                     proyecto_id: pId,
                     detalle_items: newItems,
-                    monto_total: newTotal
+                    monto_total: newTotal,
+                    superficie_m2: (selectedProj?.superficie_m2 && selectedProj.superficie_m2 > 0) ? selectedProj.superficie_m2 : formData.superficie_m2
                   });
                 }}>
                 <option value="">Seleccione Modelo...</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.modelo} ({p.superficie_m2} m²) - ${p.precio_base?.toLocaleString()}</option>)}
+                {projects.map(p => {
+                  // If this is the currently selected project, show the surface from formData if it has a value
+                  const isSelected = p.id === formData.proyecto_id;
+                  const displayM2 = (isSelected && formData.superficie_m2 && formData.superficie_m2 > 0) 
+                    ? formData.superficie_m2 
+                    : p.superficie_m2;
+                    
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {p.modelo} ({displayM2} m²) - ${p.precio_base?.toLocaleString()}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <div>
@@ -685,6 +714,13 @@ const BudgetManager: React.FC = () => {
                     <span className="bg-slate-100 px-2 py-1 rounded-full text-xs font-bold">{budget.detalle_items.length}</span>
                 </td>
                 <td className="p-5 text-center flex justify-center gap-2">
+                   <button 
+                     onClick={(e) => handleEdit(budget, e)}
+                     className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" 
+                     title="Editar"
+                   >
+                       <Edit3 size={18} />
+                   </button>
                    <button className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition" title="Ver Detalle">
                        <Eye size={18} />
                    </button>
