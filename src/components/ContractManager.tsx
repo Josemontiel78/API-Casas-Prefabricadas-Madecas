@@ -6,8 +6,13 @@ import { generateContractText } from '@/services/geminiService';
 import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, Edit3, Eye, FileType, Trash2, Maximize2, AlertCircle, Calculator, ArrowRight, Upload, Image as ImageIcon } from 'lucide-react';
 
 // Input assets provided by the user
-declare const input_file_0: string;
-declare const input_file_1: string;
+const getSafeInputFile = (name: string): string => {
+  try {
+    return (window as any)[name] || '';
+  } catch (e) {
+    return '';
+  }
+};
 
 // --- MADECAS LOGO SVG ---
 const MADECAS_LOGO_SVG = `
@@ -64,6 +69,9 @@ const ContractManager: React.FC = () => {
   const [generatedText, setGeneratedText] = useState('');
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('preview');
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
+  const [parentContractId, setParentContractId] = useState<string | null>(null);
+  const [isAnexo, setIsAnexo] = useState(false);
+  const [m2Warning, setM2Warning] = useState<string | null>(null);
 
   // Signing State
   const [signingContract, setSigningContract] = useState<Contract | null>(null);
@@ -77,6 +85,21 @@ const ContractManager: React.FC = () => {
   const selectedBudget = budgets.find(b => b.id === selectedBudgetId);
   const selectedClient = selectedBudget ? clients.find(c => c.id === selectedBudget.cliente_id) : null;
   const selectedProject = selectedBudget ? projects.find(p => p.id === selectedBudget.proyecto_id) : null;
+
+  useEffect(() => {
+    if (selectedProject && selectedBudget) {
+      const projectM2 = selectedProject.superficie_m2;
+      const budgetM2 = selectedBudget.superficie_m2 || 0;
+      
+      if (budgetM2 > 0 && Math.abs(projectM2 - budgetM2) > 0.01) {
+        setM2Warning(`Diferencia de m² detectada: El modelo (${selectedProject.modelo}) es de ${projectM2}m², pero el presupuesto indica ${budgetM2}m². El contrato se generará con la superficie del presupuesto.`);
+      } else {
+        setM2Warning(null);
+      }
+    } else {
+      setM2Warning(null);
+    }
+  }, [selectedProject, selectedBudget]);
 
   useEffect(() => {
     setContracts(getContracts());
@@ -132,54 +155,57 @@ const ContractManager: React.FC = () => {
 
     setIsGenerating(true);
     setGeneratedText('');
-    setViewMode('preview');
     
-    // Pass the payments exactly as configured
-    const text = await generateContractText(
-        selectedClient, 
-        vendor, 
-        selectedProject, 
-        selectedBudget, 
-        payments, 
-        startDate,
-        plazoInstalacion,
-        lugarSuscripcion
-    );
-    
-    // Add date line at the top if missing or adjust it
-    const dateObj = new Date(contractDate);
-    const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-    const dateStringLiteral = `${dateObj.getDate()} de ${months[dateObj.getMonth()]} de ${dateObj.getFullYear()}`;
-    const dateShort = `${dateObj.getMonth() + 1}/${dateObj.getDate()}/${dateObj.getFullYear()}`;
-    
-    let finalText = text;
-    if (finalText.includes('[FECHA_LARGA]')) {
-        finalText = finalText.replace('[FECHA_LARGA]', `${dateShort} ${dateStringLiteral}`);
-    } else if (finalText.includes('[FECHA]')) {
-         finalText = finalText.replace('[FECHA]', `${dateShort} ${dateStringLiteral}`);
-    }
-    
-    if (finalText.includes('[FECHA_INICIO]')) {
-        const startObj = new Date(startDate);
-        const startString = `${startObj.getDate()} de ${months[startObj.getMonth()]} de ${startObj.getFullYear()}`;
-        finalText = finalText.replace('[FECHA_INICIO]', startString);
-    }
-
-    if (text.startsWith("Error de conexión con IA")) {
-        let msg = 'Error al generar contrato con IA';
-        if (text.includes('ERROR_CONFIG')) msg = 'API KEY de Gemini no configurada en el servidor.';
+    try {
+        const text = await generateContractText(
+            selectedClient!, 
+            vendor!, 
+            selectedProject!, 
+            selectedBudget!, 
+            payments, 
+            startDate,
+            plazoInstalacion,
+            lugarSuscripcion,
+            isAnexo
+        );
         
-        window.dispatchEvent(new CustomEvent('app-notification', { 
-            detail: { message: msg, type: 'error' } 
-        }));
-    } else {
-        window.dispatchEvent(new CustomEvent('app-notification', { 
-            detail: { message: 'Borrador generado. Verifique la cláusula TERCERO.', type: 'success' } 
-        }));
+        const dateObj = new Date(contractDate);
+        const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        const dateStringLiteral = `${dateObj.getDate()} de ${months[dateObj.getMonth()]} de ${dateObj.getFullYear()}`;
+        const dateShort = `${dateObj.getMonth() + 1}/${dateObj.getDate()}/${dateObj.getFullYear()}`;
+        
+        let finalText = text;
+        if (finalText.includes('[FECHA_LARGA]')) {
+            finalText = finalText.replace('[FECHA_LARGA]', `${dateShort} ${dateStringLiteral}`);
+        } else if (finalText.includes('[FECHA]')) {
+             finalText = finalText.replace('[FECHA]', `${dateShort} ${dateStringLiteral}`);
+        }
+        
+        if (finalText.includes('[FECHA_INICIO]')) {
+            const startObj = new Date(startDate);
+            const startString = `${startObj.getDate()} de ${months[startObj.getMonth()]} de ${startObj.getFullYear()}`;
+            finalText = finalText.replace('[FECHA_INICIO]', startString);
+        }
+
+        if (text.startsWith("Error de conexión con IA")) {
+             window.dispatchEvent(new CustomEvent('app-notification', { 
+                detail: { message: 'Error con Gemini. Revise la consola.', type: 'error' } 
+            }));
+            setViewMode('edit');
+        } else {
+            window.dispatchEvent(new CustomEvent('app-notification', { 
+                detail: { message: 'Contrato generado.', type: 'success' } 
+            }));
+            setViewMode('preview');
+        }
+        setGeneratedText(finalText);
+    } catch (err) {
+        console.error(err);
+        setGeneratedText("Error al generar el contrato.");
+        setViewMode('edit');
+    } finally {
+        setIsGenerating(false);
     }
-    
-    setGeneratedText(text);
-    setIsGenerating(false);
   };
 
   const handleFinalize = () => {
@@ -217,13 +243,17 @@ const ContractManager: React.FC = () => {
       
       cliente_snapshot: selectedClient,
       proyecto_snapshot: selectedProject,
-      presupuesto_snapshot: selectedBudget
+      presupuesto_snapshot: selectedBudget,
+      es_anexo: isAnexo,
+      parent_contract_id: parentContractId || undefined
     };
 
     saveContract(contractData);
     setContracts(getContracts());
     setIsCreating(false);
     setEditingContractId(null);
+    setParentContractId(null);
+    setIsAnexo(false);
     setSelectedBudgetId('');
     setGeneratedText('');
     setStartDate('');
@@ -245,6 +275,8 @@ const ContractManager: React.FC = () => {
 
   const handleEditSavedContract = (contract: Contract) => {
     setEditingContractId(contract.id);
+    setIsAnexo(contract.es_anexo || false);
+    setParentContractId(contract.parent_contract_id || null);
     setSelectedBudgetId(contract.presupuesto_id || '');
     setGeneratedText(contract.contenido_texto);
     setContractDate(contract.fecha_contrato);
@@ -255,6 +287,30 @@ const ContractManager: React.FC = () => {
     setPayments(contract.hitos_pago);
     setIsCreating(true);
     setViewMode('edit');
+  };
+
+  const handleCreateAnnex = (contract: Contract) => {
+    setParentContractId(contract.id);
+    setIsAnexo(true);
+    setEditingContractId(null);
+    setSelectedBudgetId(contract.presupuesto_id || '');
+    
+    // Copy existing data but mark as annex
+    setGeneratedText(`ANEXO DE CONTRATO\n\nEste documento constituye un ANEXO al contrato #${contract.id.slice(0,6)} celebrado el día ${contract.fecha_contrato}.\n\nMODIFICACIONES:\n1. [Describir cambio en presupuesto/alcance]\n2. [Describir cambio en plazos]\n\nLAS PARTES ratifican el resto de las cláusulas del contrato principal.\n\n${contract.contenido_texto}`);
+    
+    setContractDate(new Date().toISOString().split('T')[0]);
+    setStartDate(contract.fecha_inicio_obra || '');
+    setPlazoInstalacion(contract.plazo_instalacion_dias || 30);
+    setLugarSuscripcion(contract.lugar_suscripcion || 'Osorno');
+    setMetodoPago(contract.metodo_pago);
+    setPayments(contract.hitos_pago);
+    
+    setIsCreating(true);
+    setViewMode('edit');
+    
+    window.dispatchEvent(new CustomEvent('app-notification', { 
+        detail: { message: 'Creando Anexo. El texto base se ha copiado para su edición.', type: 'info' } 
+    }));
   };
 
   // --- Payment Plan Editing Logic ---
@@ -526,7 +582,7 @@ const ContractManager: React.FC = () => {
                     top: 0; left: 0;
                     width: 100%; height: 100%;
                     object-fit: cover;
-                    opacity: 0.12; /* Adjusting visibility */
+                    opacity: 0.2; /* Better visibility as requested */
                     filter: saturate(0.5) brightness(1.1);
                     z-index: -20;
                 }
@@ -636,10 +692,10 @@ const ContractManager: React.FC = () => {
               <div class="page-counter"></div>
 
               <div class="content">
-                 <img src="${input_file_1}" class="document-logo-start" />
+                 ${getSafeInputFile('input_file_1') ? `<img src="${getSafeInputFile('input_file_1')}" class="document-logo-start" />` : `<div style="display:flex; justify-content:center; margin-bottom:30px;">${MADECAS_LOGO_HEADER_SVG}</div>`}
                  ${htmlContent}
                  ${signaturesTable}
-                 <img src="${input_file_0}" class="document-logo-end" />
+                 ${getSafeInputFile('input_file_0') ? `<img src="${getSafeInputFile('input_file_0')}" class="document-logo-end" />` : `<div style="margin-top:40px;">${MADECAS_FOOTER_SVG}</div>`}
               </div>
               
               <script>
@@ -689,6 +745,28 @@ const ContractManager: React.FC = () => {
                   <span className="text-slate-500">Proyecto:</span>
                   <span className="font-bold text-slate-800">{selectedProject.modelo}</span>
                 </div>
+
+                {m2Warning && (
+                  <div className="bg-amber-100/50 p-3 rounded-lg border border-amber-200 mt-2">
+                    <div className="flex gap-2">
+                      <AlertCircle className="text-amber-600 shrink-0" size={14} />
+                      <div>
+                        <p className="text-[10px] font-bold text-amber-900 uppercase">Inconsistencia de Superficie</p>
+                        <p className="text-[11px] text-amber-800 leading-tight my-1">{m2Warning}</p>
+                        <div className="mt-2 space-y-1">
+                          <p className="text-[9px] font-bold text-amber-900 uppercase">¿Cómo corregir?</p>
+                          <ol className="list-decimal list-inside text-[10px] text-amber-800 space-y-0.5">
+                            <li>Vaya al menú de <b>Presupuestos</b>.</li>
+                            <li>Busque este presupuesto y haga clic en <b>Editar</b>.</li>
+                            <li>En <b>Superficie y Radier</b>, ajuste los m² del radier o modelo.</li>
+                            <li>Guarde y vuelva aquí para re-seleccionar.</li>
+                          </ol>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex justify-between pt-1">
                   <span className="text-slate-500">Valor Total:</span>
                   <span className="font-bold text-orange-700 text-sm">${selectedBudget.monto_total.toLocaleString()}</span>
@@ -946,14 +1024,18 @@ const ContractManager: React.FC = () => {
                             <img 
                                 src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&q=80&w=2000" 
                                 className="paper-bg-image" 
-                                style={{ opacity: 0.1, filter: 'saturate(0.5) brightness(1.1)' }}
+                                style={{ opacity: 0.2, filter: 'saturate(0.5) brightness(1.1)' }}
                                 alt="Background"
                                 onError={(e) => (e.currentTarget.style.display = 'none')}
                             />
                             
                             {/* Round Logo at Start */}
                             <div className="flex justify-center mb-10 relative z-10">
-                                 <img src={input_file_1} className="w-64 h-auto" alt="Logo Start" />
+                                 {getSafeInputFile('input_file_1') ? (
+                                    <img src={getSafeInputFile('input_file_1')} className="w-64 h-auto" alt="Logo Start" />
+                                 ) : (
+                                    <div className="h-24 w-72" dangerouslySetInnerHTML={{ __html: MADECAS_LOGO_HEADER_SVG }} />
+                                 )}
                             </div>
 
                             <div 
@@ -963,7 +1045,11 @@ const ContractManager: React.FC = () => {
 
                             {/* Green Logo at End */}
                             <div className="mt-10 relative z-10 border-t pt-10">
-                                <img src={input_file_0} className="w-full h-auto rounded-lg shadow-sm" alt="Logo End" />
+                                {getSafeInputFile('input_file_0') ? (
+                                    <img src={getSafeInputFile('input_file_0')} className="w-full h-auto rounded-lg shadow-sm" alt="Logo End" />
+                                ) : (
+                                    <div className="h-12 w-full" dangerouslySetInnerHTML={{ __html: MADECAS_FOOTER_SVG }} />
+                                )}
                             </div>
 
                             {/* Pagination Placeholder */}
@@ -1069,7 +1155,12 @@ const ContractManager: React.FC = () => {
                         </div>
                         <div>
                             <div className="flex items-center gap-3">
-                                <h4 className="font-bold text-slate-800 text-lg">Contrato #{contract.id.slice(0,6)}</h4>
+                                <h4 className="font-bold text-slate-800 text-lg">
+                                    {contract.es_anexo ? 'Anexo' : 'Contrato'} #{contract.id.slice(0,6)}
+                                </h4>
+                                {contract.es_anexo && (
+                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black rounded uppercase">Anexo de #{contract.parent_contract_id?.slice(0,6)}</span>
+                                )}
                                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
                                     isSigned ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'
                                 }`}>
@@ -1103,6 +1194,15 @@ const ContractManager: React.FC = () => {
                              )}
                           </div>
                         )}
+
+                        {isSigned && (
+                            <button 
+                                onClick={() => handleCreateAnnex(contract)}
+                                className="px-3 py-1.5 text-xs font-bold bg-orange-50 text-orange-700 rounded-lg border border-orange-100 hover:bg-orange-100 flex items-center gap-1.5 transition"
+                            >
+                                <Plus size={12} /> CREAR ANEXO
+                            </button>
+                        )}
                         
                         <div className="text-right border-l pl-6 border-slate-100 hidden md:block">
                              <p className="text-xs text-slate-400 font-bold uppercase">Monto Total</p>
@@ -1110,13 +1210,30 @@ const ContractManager: React.FC = () => {
                         </div>
 
                         <div className="flex gap-2 border-l pl-4 border-slate-100 ml-2">
+                            {contract.documento_archivo_url && (
+                                <div className="flex gap-1 items-center animate-in fade-in">
+                                     <button 
+                                         className="px-3 py-1.5 text-[10px] font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition uppercase tracking-tighter"
+                                         onClick={() => printContract(contract)}
+                                     >
+                                         Versión Digital
+                                     </button>
+                                     <button 
+                                         className="px-3 py-1.5 text-[10px] font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition uppercase tracking-tighter"
+                                         onClick={() => viewDocument(contract.documento_archivo_url!)}
+                                     >
+                                         Versión Firmada
+                                     </button>
+                                 </div>
+                            )}
+
                             {contract.documento_archivo_url ? (
                                 <button 
-                                    className="p-2.5 text-emerald-600 hover:bg-emerald-50 rounded-xl transition"
-                                    onClick={() => viewDocument(contract.documento_archivo_url!)}
-                                    title="Ver Escaneo / PDF"
+                                    className="p-2.5 text-orange-600 hover:bg-orange-50 rounded-xl transition"
+                                    onClick={() => triggerUpload(contract.id)}
+                                    title="Re-subir Contrato Escaneado"
                                 >
-                                    {contract.documento_archivo_tipo === 'PDF' ? <FileText size={20} /> : <ImageIcon size={20} />}
+                                    <Upload size={20} />
                                 </button>
                             ) : (
                                 <button 
@@ -1130,7 +1247,7 @@ const ContractManager: React.FC = () => {
                             <button 
                             className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition"
                             onClick={() => handleEditSavedContract(contract)}
-                            title="Editar Datos"
+                            title="Previsualizar / Editar Borrador"
                             >
                                 <Edit3 size={20} />
                             </button>

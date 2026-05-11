@@ -77,6 +77,8 @@ export interface Budget {
   plazo_instalacion_dias?: number;
   fecha_inicio_obra?: string;
   lugar_suscripcion?: string;
+  superficie_m2?: number;
+  medidas_radier?: { largo: number; ancho: number };
 }
 
 export interface PaymentInstallment {
@@ -118,6 +120,8 @@ export interface Contract {
   documento_archivo_url?: string; // Base64 or Blob URL for now
   documento_archivo_tipo?: 'PDF' | 'PHOTO';
   fecha_escaneo?: string;
+  es_anexo?: boolean;
+  parent_contract_id?: string;
 }
 
 export interface AppNotification {

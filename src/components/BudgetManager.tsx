@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Budget, BudgetItem, Client, Project } from '@/types';
 import { getBudgets, saveBudget, getClients, getProjects, deleteBudget, saveProject } from '@/services/db';
 import { analyzeBudgetFile } from '@/services/geminiService';
-import { Plus, Save, Trash2, Calculator, Upload, Loader2, Eye, X, FileText, Search, ArrowRight } from 'lucide-react';
+import { Plus, Save, Trash2, Calculator, Upload, Loader2, Eye, X, FileText, Search, ArrowRight, Maximize2 } from 'lucide-react';
 
 const BudgetManager: React.FC = () => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
@@ -132,7 +132,8 @@ const BudgetManager: React.FC = () => {
                 setFormData(prev => ({
                     ...prev,
                     detalle_items: [...prev.detalle_items, ...newItems],
-                    monto_total: prev.monto_total + newItems.reduce((s, i) => s + i.total, 0)
+                    monto_total: prev.monto_total + newItems.reduce((s, i) => s + i.total, 0),
+                    superficie_m2: parsed.superficie_m2 || prev.superficie_m2
                 }));
                 
                 window.dispatchEvent(new CustomEvent('app-notification', { 
@@ -352,6 +353,64 @@ const BudgetManager: React.FC = () => {
               <input type="date" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
                 value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} />
             </div>
+          </div>
+
+          <div className="bg-orange-50/50 p-6 rounded-2xl border border-orange-100">
+             <div className="flex justify-between items-center mb-4">
+                <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wide">
+                    <Maximize2 size={16} className="text-orange-600" /> Superficie y Radier
+                </h4>
+             </div>
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">M2 del Modelo</label>
+                    <input 
+                        type="number" 
+                        className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+                        value={formData.superficie_m2 || 0}
+                        onChange={e => setFormData({...formData, superficie_m2: Number(e.target.value)})}
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Largo Radier (m)</label>
+                    <input 
+                        type="number" 
+                        className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+                        value={formData.medidas_radier?.largo || 0}
+                        onChange={e => {
+                            const largo = Number(e.target.value);
+                            const ancho = formData.medidas_radier?.ancho || 0;
+                            setFormData({
+                                ...formData, 
+                                medidas_radier: { largo, ancho },
+                                superficie_m2: largo * ancho || formData.superficie_m2
+                            });
+                        }}
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ancho Radier (m)</label>
+                    <input 
+                        type="number" 
+                        className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+                        value={formData.medidas_radier?.ancho || 0}
+                        onChange={e => {
+                            const ancho = Number(e.target.value);
+                            const largo = formData.medidas_radier?.largo || 0;
+                            setFormData({
+                                ...formData, 
+                                medidas_radier: { largo, ancho },
+                                superficie_m2: largo * ancho || formData.superficie_m2
+                            });
+                        }}
+                    />
+                </div>
+             </div>
+             {formData.medidas_radier && formData.medidas_radier.largo > 0 && formData.medidas_radier.ancho > 0 && (
+                 <p className="mt-2 text-xs font-medium text-orange-700 italic">
+                    * Superficie calculada automáticamente: {formData.medidas_radier.largo * formData.medidas_radier.ancho} m²
+                 </p>
+             )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -617,7 +676,10 @@ const BudgetManager: React.FC = () => {
               >
                 <td className="p-5 text-sm text-slate-600 font-mono">{budget.fecha}</td>
                 <td className="p-5 font-bold text-slate-800">{getClientName(budget.cliente_id)}</td>
-                <td className="p-5 text-sm text-slate-600 bg-slate-50/50 rounded-lg">{getProjectName(budget.proyecto_id)}</td>
+                <td className="p-5 text-sm text-slate-600 bg-slate-50/50 rounded-lg">
+                    {getProjectName(budget.proyecto_id)}
+                    {budget.superficie_m2 ? <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full font-bold">{budget.superficie_m2} m²</span> : null}
+                </td>
                 <td className="p-5 text-right font-bold text-orange-600">${budget.monto_total.toLocaleString()}</td>
                 <td className="p-5 text-center text-sm text-slate-500">
                     <span className="bg-slate-100 px-2 py-1 rounded-full text-xs font-bold">{budget.detalle_items.length}</span>

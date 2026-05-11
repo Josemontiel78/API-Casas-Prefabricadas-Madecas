@@ -31,18 +31,21 @@ export const generateContractText = async (
   payments: PaymentInstallment[],
   startDate: string,
   plazoInstalacion: number = 30,
-  lugarSuscripcion: string = 'Osorno'
+  lugarSuscripcion: string = 'Osorno',
+  isAnexo: boolean = false
 ): Promise<string> => {
   try {
     const ai = getGeminiClient();    const systemInstruction = `
     Eres un abogado experto en contratos inmobiliarios y de construcción para la empresa "MADECAS".
     
-    TU OBJETIVO: Redactar un "CONTRATO DE COMPRAVENTA" siguiendo estrictamente el tono y estructura observada en los documentos oficiales de la empresa.
+    TU OBJETIVO: Redactar un ${isAnexo ? '"ANEXO DE CONTRATO"' : '"CONTRATO DE COMPRAVENTA"'} siguiendo estrictamente el tono y estructura observada en los documentos oficiales de la empresa.
+    
+    ${isAnexo ? 'Este es un ANEXO, por lo tanto debe referenciar que modifica un contrato previo y detallar los cambios en presupuesto o plazos manteniendo la validez del contrato original.' : ''}
     
     ESTRUCTURA OBLIGATORIA DEL DOCUMENTO:
     
     1. **ENCABEZADO:** 
-       - Título: "CONTRATO DE COMPRAVENTA" (Centrado).
+       - Título: ${isAnexo ? '"ANEXO DE CONTRATO"' : '"CONTRATO DE COMPRAVENTA"'} (Centrado).
        - Línea de Identificación de Partes: "COMERCIALIZADORA MADECAS SPA Y SR/A [NOMBRE CLIENTE]"
     
     2. **PÁRRAFO DE INTRODUCCIÓN:**
@@ -73,7 +76,7 @@ export const generateContractText = async (
     Genera el contrato con los siguientes datos:
     VENDEDOR: ${vendor.nombre}, RUT ${vendor.rut}, Rep: ${vendor.nombre === 'COMERCIALIZADORA MADECAS SPA' ? 'EDUARDO HUMBERTO SOTO ALVARADO' : 'Representante Legal'}, Domicilio: ${vendor.domicilio}.
     COMPRADOR: ${client.nombre}, RUT ${client.rut}, Domicilio: ${client.domicilio}, Tel: ${client.telefono}, Email: ${client.correo}.
-    PROYECTO: ${project.modelo}, ${project.superficie_m2} m2.
+    PROYECTO: ${project.modelo}, ${budget.superficie_m2 || project.superficie_m2} m2.
     MATERIALES: ${project.materiales_principales.join(", ")}. ADICIONALES: ${project.adicionales.join(", ")}.
     PRESUPUESTO TOTAL: $${budget.monto_total.toLocaleString('es-CL')}.
     PAGOS: ${payments.map(p => `- ${p.descripcion}: ${p.porcentaje}% ($${p.monto.toLocaleString('es-CL')})`).join("\n")}
@@ -103,7 +106,7 @@ export const analyzeBudgetFile = async (base64Data: string, mimeType: string): P
   try {
     const ai = getGeminiClient();
 
-    const prompt = "Actúa como un experto en presupuestos de construcción y OCR. Analiza COMPLETAMENTE este documento (PDF o Imagen). Extrae TODOS los ítems, materiales o servicios listados. Retorna EXCLUSIVAMENTE un JSON válido con esta estructura: { \"items\": [ {\"descripcion\": string, \"cantidad\": number, \"unidad\": string, \"precio_unitario\": number} ] }. Asegúrate de que los números sean puros (sin símbolos de moneda). Si el PDF es complejo, identifica los términos clave de construcción.";
+    const prompt = "Actúa como un experto en presupuestos de construcción y OCR. Analiza COMPLETAMENTE este documento (PDF o Imagen). Extrae TODOS los ítems, materiales o servicios listados. También busca si se menciona la superficie total en m2 o las dimensiones del radier/base. Retorna EXCLUSIVAMENTE un JSON válido con esta estructura: { \"items\": [ {\"descripcion\": string, \"cantidad\": number, \"unidad\": string, \"precio_unitario\": number} ], \"superficie_m2\": number | null }. Asegúrate de que los números sean puros (sin símbolos de moneda).";
 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
