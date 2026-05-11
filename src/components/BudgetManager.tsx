@@ -56,11 +56,25 @@ const BudgetManager: React.FC = () => {
     const pendingProjectId = window.localStorage.getItem('pending_quote_project_id');
     const pendingClientId = window.localStorage.getItem('pending_quote_client_id');
 
-    if (pendingProjectId || pendingClientId) {
+    if (pendingProjectId || pendingClientId || window.localStorage.getItem('dash_trigger_budget_id')) {
+      const dashTriggerId = window.localStorage.getItem('dash_trigger_budget_id');
+      
       if (pendingProjectId) window.localStorage.removeItem('pending_quote_project_id');
       if (pendingClientId) window.localStorage.removeItem('pending_quote_client_id');
+      if (dashTriggerId) window.localStorage.removeItem('dash_trigger_budget_id');
       
       const allProjects = getProjects();
+      const allBudgets = getBudgets();
+      
+      if (dashTriggerId) {
+          const budget = allBudgets.find(b => b.id === dashTriggerId);
+          if (budget) {
+              setFormData({ ...budget });
+              setIsEditing(true);
+              return;
+          }
+      }
+
       const proj = pendingProjectId ? allProjects.find(p => p.id === pendingProjectId) : null;
       
       setFormData(prev => ({
@@ -253,7 +267,7 @@ const BudgetManager: React.FC = () => {
     const newProject: Project = {
       id: crypto.randomUUID(),
       modelo: modelName.toUpperCase(),
-      superficie_m2: 0, // Should be filled or guessed
+      superficie_m2: formData.superficie_m2 || 0,
       precio_base: formData.monto_total,
       etapa: 'Cotización',
       materiales_principales: formData.detalle_items.map(i => i.descripcion).slice(0, 5),
@@ -266,8 +280,11 @@ const BudgetManager: React.FC = () => {
     setShowModelSave(false);
     setModelName('');
     
+    // Auto-select the new model for the current budget
+    setFormData(prev => ({ ...prev, proyecto_id: newProject.id }));
+    
     window.dispatchEvent(new CustomEvent('app-notification', { 
-        detail: { message: `Modelo "${newProject.modelo}" creado en el catálogo`, type: 'success' } 
+        detail: { message: `Modelo "${newProject.modelo}" creado y seleccionado`, type: 'success' } 
     }));
   };
 
@@ -353,21 +370,23 @@ const BudgetManager: React.FC = () => {
                     newTotal = selectedProj.precio_base;
                   }
 
-                  setFormData({
-                    ...formData, 
+                  setFormData(prev => ({
+                    ...prev, 
                     proyecto_id: pId,
                     detalle_items: newItems,
                     monto_total: newTotal,
-                    superficie_m2: (selectedProj?.superficie_m2 && selectedProj.superficie_m2 > 0) ? selectedProj.superficie_m2 : formData.superficie_m2
-                  });
+                    superficie_m2: (selectedProj?.superficie_m2 && selectedProj.superficie_m2 > 0) 
+                      ? selectedProj.superficie_m2 
+                      : (prev.superficie_m2 || 0)
+                  }));
                 }}>
                 <option value="">Seleccione Modelo...</option>
                 {projects.map(p => {
-                  // If this is the currently selected project, show the surface from formData if it has a value
                   const isSelected = p.id === formData.proyecto_id;
-                  const displayM2 = (isSelected && formData.superficie_m2 && formData.superficie_m2 > 0) 
-                    ? formData.superficie_m2 
-                    : p.superficie_m2;
+                  // If selected, prioritize budget surface. If not, use catalog surface.
+                  const displayM2 = isSelected 
+                    ? (formData.superficie_m2 || p.superficie_m2 || 0)
+                    : (p.superficie_m2 || 0);
                     
                   return (
                     <option key={p.id} value={p.id}>

@@ -17,6 +17,16 @@ const ClientManager: React.FC = () => {
     const data = getClients();
     setClients(data);
     setFilteredClients(data);
+
+    // Check for dashboard deep-link
+    const triggerId = window.localStorage.getItem('dash_trigger_client_id');
+    if (triggerId) {
+        const client = data.find(c => c.id === triggerId);
+        if (client) {
+            handleEdit(client);
+        }
+        window.localStorage.removeItem('dash_trigger_client_id');
+    }
   }, []);
 
   useEffect(() => {
