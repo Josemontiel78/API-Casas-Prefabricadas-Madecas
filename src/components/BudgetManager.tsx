@@ -89,10 +89,20 @@ const BudgetManager: React.FC = () => {
                     detail: { message: `Se importaron ${newItems.length} ítems con IA`, type: 'success' } 
                 }));
             }
-        } catch (err) {
-            console.error(err);
+        } catch (err: any) {
+            console.error("Error analyzing budget:", err);
+            let userMsg = 'Error al analizar el archivo. Intente con una imagen más clara o PDF legible.';
+            
+            if (err.message === 'API_KEY_INVALID') {
+                userMsg = 'API Key de Gemini inválida o no configurada.';
+            } else if (err.message === 'QUOTA_EXCEEDED') {
+                userMsg = 'Límite de cuota de IA excedido. Intente más tarde.';
+            } else if (err.message?.includes('ERROR_CONFIG')) {
+                userMsg = 'Configuración de IA incompleta (Falta API Key).';
+            }
+
             window.dispatchEvent(new CustomEvent('app-notification', { 
-                detail: { message: 'Error al analizar el archivo. Intente con una imagen más clara.', type: 'error' } 
+                detail: { message: userMsg, type: 'error' } 
             }));
         } finally {
             setIsAnalyzing(false);

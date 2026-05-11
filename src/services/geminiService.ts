@@ -3,15 +3,22 @@ import { GoogleGenAI } from "@google/genai";
 import { Client, Project, Budget, Vendor, PaymentInstallment, Contract } from "@/types";
 
 const getGeminiClient = () => {
-  // Try to get from process.env (Vite define) or import.meta.env (Standard Vite)
-  const apiKey = (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'undefined') 
-    ? process.env.GEMINI_API_KEY 
-    : (import.meta as any).env?.VITE_GEMINI_API_KEY;
+  // Try to get from multiple sources for maximum compatibility across environments (Vite, Vercel, AIS)
+  let apiKey = '';
+  
+  try {
+    apiKey = (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'undefined') 
+      ? process.env.GEMINI_API_KEY 
+      : (import.meta as any).env?.VITE_GEMINI_API_KEY;
+  } catch (e) {
+    apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+  }
   
   if (!apiKey || apiKey === 'undefined' || apiKey === '') {
-    throw new Error("ERROR: La API KEY de Gemini no está configurada. En Vercel, añade VITE_GEMINI_API_KEY o GEMINI_API_KEY a las variables de entorno.");
+    console.warn("API Key not found in process.env or import.meta.env");
+    throw new Error("ERROR_CONFIG: La API KEY de Gemini no está configurada. En Vercel, añade VITE_GEMINI_API_KEY a las variables de entorno.");
   }
-  return new GoogleGenAI(apiKey);
+  return new GoogleGenAI({ apiKey });
 };
 
 // --- Contract Generation ---
@@ -43,64 +50,44 @@ export const generateContractText = async (
     ESTRUCTURA DE CLÁUSULAS OBLIGATORIA:
     
     1. **PRIMERO (Objeto):** "EL VENDEDOR es dueño del proyecto DE UNA CASA MODELO [NOMBRE]..." Detallar materiales y superficie.
-    
-    2. **DECLARACIONES DEL COMPRADOR:** (Sin número de cláusula, usar subtítulo "Del mismo el COMPRADOR declara:"). Lista de viñetas sobre conocimiento del proyecto, permisos, etc.
-    
-    3. **SEGUNDO (Obligaciones Comprador):** "Por este acto el COMPRADOR se obliga a...". (Pagos, condiciones terreno, permisos, acceso).
-    
-    4. **TERCERO (Obligaciones Vendedor):** "Por este acto el VENDEDOR se obliga a: a) Entregar al COMPRADOR el SERVICIO contratado... b) Respetar plazos... c) Proporcionar información...". 
-       *ESTA CLÁUSULA ES CRÍTICA. NO LA OMITAS.*
-    
-    5. **CUARTO (La Venta):** "Por el presente instrumento [EMPRESA] vende al COMPRADOR... la propiedad de los bienes MUEBLES...".
-    
-    6. **QUINTO (Precio):** "El valor es la suma de [MONTO]...".
-    
-    7. **SEXTO (Forma de Pago):** Desglose detallado de las cuotas. Incluir nota: "No se aceptará el cheque...". Incentivo traslado SIN COSTO.
-    
-    8. **SÉPTIMO (Plazos):** "EL VENDEDOR se obliga a poner en terreno... el DIA [FECHA INICIO]...".
-    
-    9. **OCTAVO (Multa):** "Se establece una cláusula penal equivalente al 25% del valor total...".
-    
-    10. **NOVENO (Jurisdicción):** Tribunales de Osorno.
-    
-    11. **DÉCIMO (Ejemplares):** Dos ejemplares.
-    
-    12. **UNDÉCIMO (Facultad):** Facultad de retiro si no paga.
+    2. **DECLARACIONES DEL COMPRADOR:** (Subtítulo: "Del mismo el COMPRADOR declara:"). Lista de viñetas.
+    3. **SEGUNDO (Obligaciones Comprador)**
+    4. **TERCERO (Obligaciones Vendedor)**
+    5. **CUARTO (La Venta)**
+    6. **QUINTO (Precio)**
+    7. **SEXTO (Forma de Pago)**
+    8. **SÉPTIMO (Plazos)**
+    9. **OCTAVO (Multa)**
+    10. **NOVENO (Jurisdicción)**
+    11. **DÉCIMO (Ejemplares)**
+    12. **UNDÉCIMO (Facultad)**
     
     INSTRUCCIONES DE CONTENIDO:
-    - Incluye el detalle técnico completo del proyecto en la cláusula PRIMERO.
-    - Convierte todos los montos a palabras y cifras (ej: $1.000.000 (UN MILLÓN DE PESOS)).
+    - Incluye el detalle técnico completo del proyecto.
+    - Convierte todos los montos a palabras y cifras.
     - Asegúrate de que el texto sea fluido y profesional.
     `;
 
     const prompt = `
     Genera el contrato con los siguientes datos:
-
     VENDEDOR: ${vendor.nombre}, RUT ${vendor.rut}, Rep: ${vendor.nombre === 'COMERCIALIZADORA MADECAS SPA' ? 'EDUARDO HUMBERTO SOTO ALVARADO' : 'Representante Legal'}, Domicilio: ${vendor.domicilio}.
     COMPRADOR: ${client.nombre}, RUT ${client.rut}, Domicilio: ${client.domicilio}, Tel: ${client.telefono}, Email: ${client.correo}.
-    
     PROYECTO: ${project.modelo}, ${project.superficie_m2} m2.
     MATERIALES: ${project.materiales_principales.join(", ")}. ADICIONALES: ${project.adicionales.join(", ")}.
-    
     PRESUPUESTO TOTAL: $${budget.monto_total.toLocaleString('es-CL')}.
-    PAGOS:
-    ${payments.map(p => `- ${p.descripcion}: ${p.porcentaje}% ($${p.monto.toLocaleString('es-CL')})`).join("\n")}
-    
+    PAGOS: ${payments.map(p => `- ${p.descripcion}: ${p.porcentaje}% ($${p.monto.toLocaleString('es-CL')})`).join("\n")}
     FECHA INICIO: ${startDate}.
-    FECHA HOY: ${new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}.
     `;
 
-    const response = await ai.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      systemInstruction: systemInstruction,
-    }).generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [{ role: 'user', parts: [{ text: systemInstruction + "\n\n" + prompt }] }],
+      config: {
         temperature: 0.1,
       }
     });
 
-    return response.response.text() || "Error al generar contrato.";
+    return response.text || "Error al generar contrato.";
   } catch (error) {
     console.error("Error generating contract:", error);
     const msg = (error as Error).message;
@@ -113,26 +100,37 @@ export const generateContractText = async (
 export const analyzeBudgetFile = async (base64Data: string, mimeType: string): Promise<string> => {
   try {
     const ai = getGeminiClient();
-    const model = ai.getGenerativeModel({
-        model: "gemini-1.5-flash",
+
+    const prompt = "Actúa como un experto en presupuestos de construcción y OCR. Analiza COMPLETAMENTE este documento (PDF o Imagen). Extrae TODOS los ítems, materiales o servicios listados. Retorna EXCLUSIVAMENTE un JSON válido con esta estructura: { \"items\": [ {\"descripcion\": string, \"cantidad\": number, \"unidad\": string, \"precio_unitario\": number} ] }. Asegúrate de que los números sean puros (sin símbolos de moneda). Si el PDF es complejo, identifica los términos clave de construcción.";
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: {
+          parts: [
+            {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Data
+                }
+            },
+            { text: prompt }
+          ]
+      }
     });
 
-    const prompt = "Actúa como un experto en presupuestos de construcción y OCR. Analiza COMPLETAMENTE este documento (imagen o PDF). Extrae TODOS los ítems, materiales o servicios listados. Retorna EXCLUSIVAMENTE un JSON válido con esta estructura: { \"items\": [ {\"descripcion\": string, \"cantidad\": number, \"unidad\": string, \"precio_unitario\": number} ] }. Asegúrate de que los números sean puros. Si la imagen es borrosa o el PDF es complejo, identifica los términos clave de construcción.";
-
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: mimeType,
-          data: base64Data
-        }
-      },
-      { text: prompt }
-    ]);
-
-    const response = await result.response;
-    return response.text() || "";
-  } catch (error) {
-    console.error("Error analyzing file:", error);
+    let text = response.text || "";
+    
+    // Extract JSON using regex to handle potential text around the code block
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+        text = jsonMatch[0];
+    }
+    
+    return text.trim();
+  } catch (error: any) {
+    console.error("Error in Gemini analyzeBudgetFile:", error);
+    if (error.message?.includes('403')) throw new Error("API_KEY_INVALID");
+    if (error.message?.includes('429')) throw new Error("QUOTA_EXCEEDED");
     throw error;
   }
 };
@@ -174,15 +172,16 @@ export const generateBusinessAnalysis = async (
     ${contextString}
     `;
 
-    const model = ai.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      systemInstruction: systemInstruction,
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: userPrompt,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.3,
+      }
     });
 
-    const result = await model.generateContent(userPrompt);
-    const response = await result.response;
-
-    return response.text() || "No se pudo generar el análisis.";
+    return response.text || "No se pudo generar el análisis.";
 
   } catch (error) {
     console.error("Error in AI Analysis:", error);

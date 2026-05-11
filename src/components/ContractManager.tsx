@@ -121,9 +121,12 @@ const ContractManager: React.FC = () => {
     // Pass the payments exactly as configured
     const text = await generateContractText(selectedClient, vendor, selectedProject, selectedBudget, payments, startDate);
     
-    if (text.startsWith("Error")) {
+    if (text.startsWith("Error de conexión con IA")) {
+        let msg = 'Error al generar contrato con IA';
+        if (text.includes('ERROR_CONFIG')) msg = 'API KEY de Gemini no configurada en el servidor.';
+        
         window.dispatchEvent(new CustomEvent('app-notification', { 
-            detail: { message: 'Error al generar contrato con IA', type: 'error' } 
+            detail: { message: msg, type: 'error' } 
         }));
     } else {
         window.dispatchEvent(new CustomEvent('app-notification', { 

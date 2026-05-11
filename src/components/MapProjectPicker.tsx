@@ -111,19 +111,19 @@ const MapProjectPicker: React.FC<MapProjectPickerProps> = ({ onLocationSelect, i
         let msg = "No se pudo obtener tu ubicación.";
         switch(error.code) {
           case error.PERMISSION_DENIED:
-            msg = "Permiso de ubicación denegado. Por favor, habilítalo en tu navegador.";
+            msg = "Permiso de ubicación denegado. Por favor, asegúrate de que el sitio tenga permiso para acceder a tu ubicación en los ajustes del navegador.";
             break;
           case error.POSITION_UNAVAILABLE:
-            msg = "La ubicación no está disponible actualmente.";
+            msg = "La ubicación no está disponible (problema de GPS o señal).";
             break;
           case error.TIMEOUT:
-            msg = "Se agotó el tiempo de espera para obtener la ubicación.";
+            msg = "Se agotó el tiempo de espera. Intenta de nuevo o busca en un lugar con mejor señal.";
             break;
         }
         alert(msg);
         setLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
     );
   };
 
