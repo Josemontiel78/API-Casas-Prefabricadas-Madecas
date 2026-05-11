@@ -82,38 +82,85 @@ const Dashboard: React.FC = () => {
   );
 
   return (
-    <div id="dashboard-monitor" className="space-y-8">
-      {/* Header Stat Bar */}
+    <div id="dashboard-monitor" className="space-y-8 animate-in fade-in duration-700">
+      {/* Visual Sales Funnel */}
+      <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 overflow-hidden relative">
+          <div className="flex justify-between items-end mb-8">
+              <div>
+                  <h3 className="text-2xl font-black text-slate-800 tracking-tight">Embudo de Ventas (Funnel)</h3>
+                  <p className="text-sm text-slate-500">Estado actual del proceso comercial en tiempo real</p>
+              </div>
+              <div className="text-right">
+                  <p className="text-3xl font-black text-emerald-600">${stats.totalVolume.toLocaleString()}</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ventas Cerradas</p>
+              </div>
+          </div>
+
+          <div className="relative h-48 flex items-center justify-center">
+              {/* Funnel SVG Visualization */}
+              <div className="absolute inset-0 flex justify-between items-center px-12 pointer-events-none opacity-10">
+                  <div className="h-full w-px bg-slate-300"></div>
+                  <div className="h-full w-px bg-slate-300"></div>
+                  <div className="h-full w-px bg-slate-300"></div>
+              </div>
+              
+              <div className="flex w-full max-w-4xl gap-4 items-end h-32">
+                  <div className="flex-1 flex flex-col items-center gap-2 group">
+                      <motion.div initial={{ height: 0 }} animate={{ height: '100%' }} className="w-full bg-slate-100 rounded-2xl flex items-center justify-center border border-slate-200 group-hover:bg-indigo-50 transition-colors">
+                          <span className="text-2xl font-black text-slate-400 group-hover:text-indigo-600">{stats.totalClients}</span>
+                      </motion.div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Clientes</span>
+                  </div>
+                  <div className="w-8 flex items-center justify-center text-slate-300">
+                      <ArrowUpRight className="rotate-45" />
+                  </div>
+                  <div className="flex-1 flex flex-col items-center gap-2 group">
+                      <motion.div initial={{ height: 0 }} animate={{ height: '75%' }} className="w-full bg-slate-100 rounded-2xl flex items-center justify-center border border-slate-200 group-hover:bg-orange-50 transition-colors">
+                          <span className="text-2xl font-black text-slate-400 group-hover:text-orange-600">{stats.totalQuotes}</span>
+                      </motion.div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Cotizaciones</span>
+                  </div>
+                  <div className="w-8 flex items-center justify-center text-slate-300">
+                      <ArrowUpRight className="rotate-45" />
+                  </div>
+                  <div className="flex-1 flex flex-col items-center gap-2 group">
+                      <motion.div initial={{ height: 0 }} animate={{ height: '40%' }} className="w-full bg-slate-100 rounded-2xl flex items-center justify-center border border-slate-200 group-hover:bg-emerald-50 transition-colors">
+                          <span className="text-2xl font-black text-slate-400 group-hover:text-emerald-600">{stats.signedContracts}</span>
+                      </motion.div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Cierres</span>
+                  </div>
+              </div>
+          </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard 
-          title="Cartera Clientes" 
-          value={stats.totalClients} 
-          sub="Prospectos únicos registrados"
-          icon={Users} 
-          color="bg-indigo-600"
-          trend="+12%"
+          title="Conversion Rate" 
+          value={`${((stats.signedContracts / (stats.totalQuotes || 1)) * 100).toFixed(1)}%`} 
+          sub="Efectividad de cierre"
+          icon={TrendingUp} 
+          color="bg-emerald-600"
         />
         <MetricCard 
-          title="Gestión Proyectos" 
+          title="Oportunidades" 
+          value={`$${(stats.pendingVolume / 1000000).toFixed(1)}M`} 
+          sub="Presupuesto en negociación"
+          icon={Calculator} 
+          color="bg-orange-600"
+        />
+        <MetricCard 
+          title="Ticket Promedio" 
+          value={`$${(stats.totalVolume / (stats.signedContracts || 1) / 1000000).toFixed(1)}M`}
+          sub="Venta media por contrato"
+          icon={DollarSign} 
+          color="bg-indigo-600"
+        />
+        <MetricCard 
+          title="Catalog Health" 
           value={stats.activeProjects} 
-          sub="Modelos en catálogo actual"
+          sub="Opciones de modelos activos"
           icon={Layers} 
           color="bg-blue-600"
-        />
-        <MetricCard 
-          title="Conversión Cierre" 
-          value={stats.signedContracts} 
-          sub={`${((stats.signedContracts / (stats.totalQuotes || 1)) * 100).toFixed(1)}% tasa de éxito`}
-          icon={FileSignature} 
-          color="bg-emerald-600"
-          trend="8.4%"
-        />
-        <MetricCard 
-          title="Volumen Facturado" 
-          value={`$${(stats.totalVolume / 1000000).toFixed(1)}M`} 
-          sub="UF equivalentes histórico"
-          icon={DollarSign} 
-          color="bg-amber-600"
         />
       </div>
 

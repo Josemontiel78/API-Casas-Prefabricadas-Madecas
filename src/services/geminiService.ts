@@ -29,7 +29,9 @@ export const generateContractText = async (
   project: Project,
   budget: Budget,
   payments: PaymentInstallment[],
-  startDate: string
+  startDate: string,
+  plazoInstalacion: number = 30,
+  lugarSuscripcion: string = 'Osorno'
 ): Promise<string> => {
   try {
     const ai = getGeminiClient();
@@ -37,35 +39,33 @@ export const generateContractText = async (
     const systemInstruction = `
     Eres un abogado experto en contratos inmobiliarios y de construcción para la empresa "MADECAS".
     
-    TU OBJETIVO: Redactar un CONTRATO DE COMPRAVENTA DE CASA PREFABRICADA siguiendo estrictamente el formato adjunto por el usuario, corrigiendo la numeración de las cláusulas.
+    TU OBJETIVO: Redactar un CONTRATO DE COMPRAVENTA DE CASA PREFABRICADA siguiendo estrictamente el formato tradicional de MADECAS.
     
-    IMPORTANTE: DEBES INCLUIR LA CLÁUSULA "TERCERO" QUE A MENUDO SE OMITE. NO SALTES DEL SEGUNDO AL CUARTO.
+    IMPORTANTE: DEBES INCLUIR LA CLÁUSULA "TERCERO" QUE A MENUDO SE OMITE.
     
     REGLAS DE FORMATO:
     1. Usa formato Markdown limpio.
-    2. NO uses bloques de código.
-    3. Mantén un tono legal formal (Chile).
-    4. Usa negritas (**texto**) para nombres, RUTs, fechas y montos.
+    2. Mantén un tono legal formal (Chile).
+    3. Usa negritas (**texto**) para nombres, RUTs, fechas y montos.
     
     ESTRUCTURA DE CLÁUSULAS OBLIGATORIA:
     
-    1. **PRIMERO (Objeto):** "EL VENDEDOR es dueño del proyecto DE UNA CASA MODELO [NOMBRE]..." Detallar materiales y superficie.
-    2. **DECLARACIONES DEL COMPRADOR:** (Subtítulo: "Del mismo el COMPRADOR declara:"). Lista de viñetas.
+    1. **PRIMERO (Objeto):** Venta de casa prefabricada modelo **${project.modelo}**. Detallar materiales.
+    2. **DECLARACIONES DEL COMPRADOR**
     3. **SEGUNDO (Obligaciones Comprador)**
     4. **TERCERO (Obligaciones Vendedor)**
     5. **CUARTO (La Venta)**
-    6. **QUINTO (Precio)**
-    7. **SEXTO (Forma de Pago)**
-    8. **SÉPTIMO (Plazos)**
-    9. **OCTAVO (Multa)**
-    10. **NOVENO (Jurisdicción)**
+    6. **QUINTO (Precio):** Valor total de **$${budget.monto_total.toLocaleString('es-CL')}**.
+    7. **SEXTO (Forma de Pago):** Incluir datos bancarios: **${vendor.banco_nombre}**, **${vendor.banco_tipo_cuenta}**, N° **${vendor.banco_numero_cuenta}**. Desglosar hitos de pago.
+    8. **SÉPTIMO (Plazos):** Fecha de inicio de obra **${startDate}**. Mencionar que el vendedor tiene un plazo de **${plazoInstalacion} días hábiles** para el montaje.
+    9. **OCTAVO (Multa):** 25% del valor total.
+    10. **NOVENO (Jurisdicción):** Tribunales de **${lugarSuscripcion}**.
     11. **DÉCIMO (Ejemplares)**
     12. **UNDÉCIMO (Facultad)**
     
     INSTRUCCIONES DE CONTENIDO:
-    - Incluye el detalle técnico completo del proyecto.
-    - Convierte todos los montos a palabras y cifras.
-    - Asegúrate de que el texto sea fluido y profesional.
+    - La introducción debe decir: "En **${lugarSuscripcion}**, a **${new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}**..."
+    - Convierte montos a palabras (ej: $1.000.000 (UN MILLÓN DE PESOS)).
     `;
 
     const prompt = `
@@ -77,6 +77,7 @@ export const generateContractText = async (
     PRESUPUESTO TOTAL: $${budget.monto_total.toLocaleString('es-CL')}.
     PAGOS: ${payments.map(p => `- ${p.descripcion}: ${p.porcentaje}% ($${p.monto.toLocaleString('es-CL')})`).join("\n")}
     FECHA INICIO: ${startDate}.
+    PLAZO MONTAJE: ${plazoInstalacion} días hábiles.
     `;
 
     const response = await ai.models.generateContent({

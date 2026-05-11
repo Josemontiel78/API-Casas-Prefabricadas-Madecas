@@ -9,6 +9,7 @@ import Dashboard from '@/components/Dashboard';
 import AIAssistant from '@/components/AIAssistant';
 import CommercialHub from '@/components/CommercialHub';
 import ProjectMapOverview from '@/components/ProjectMapOverview';
+import VendorSettings from '@/components/VendorSettings';
 import { seedDatabase } from '@/services/db';
 import { ViewState, UserRole } from '@/types';
 
@@ -30,6 +31,7 @@ const App: React.FC = () => {
       case 'budgets': return <BudgetManager />;
       case 'contracts': return <ContractManager />;
       case 'ai-assistant': return <AIAssistant />;
+      case 'settings': return <VendorSettings />;
       default: return <Dashboard />;
     }
   };

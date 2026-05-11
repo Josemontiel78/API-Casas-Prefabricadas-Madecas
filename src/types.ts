@@ -28,6 +28,9 @@ export interface Vendor {
   domicilio: string;
   telefono: string;
   correo: string;
+  banco_nombre?: string;
+  banco_tipo_cuenta?: string;
+  banco_numero_cuenta?: string;
 }
 
 export interface Material {
@@ -71,6 +74,9 @@ export interface Budget {
   forma_pago: 'Contado' | 'Transferencia' | 'Crédito Directo' | 'Crédito Hipotecario';
   cuotas: number;
   estado_pago: 'Pendiente' | 'Parcial' | 'Pagado';
+  plazo_instalacion_dias?: number;
+  fecha_inicio_obra?: string;
+  lugar_suscripcion?: string;
 }
 
 export interface PaymentInstallment {
@@ -93,6 +99,12 @@ export interface Contract {
   hitos_pago: PaymentInstallment[];
   estado: ContractStatus;
   contenido_texto: string; // The AI generated text
+
+  // Plazos y Fechas
+  plazo_instalacion_dias: number;
+  fecha_inicio_obra: string;
+  fecha_entrega_estimada?: string;
+  lugar_suscripcion: string;
   
   // Snapshots for Historical Registry (Inmutable record)
   cliente_snapshot?: Client;

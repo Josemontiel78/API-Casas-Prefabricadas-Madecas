@@ -82,7 +82,10 @@ export const getVendor = (): Vendor => {
     rut: '77.300.759-4',
     domicilio: 'RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Osorno, X REGION',
     telefono: '+569 7777 00 22',
-    correo: 'obras@madecas.cl'
+    correo: 'obras@madecas.cl',
+    banco_nombre: 'BANCO ESTADO',
+    banco_tipo_cuenta: 'CUENTA CORRIENTE',
+    banco_numero_cuenta: '81500255536'
   });
 };
 

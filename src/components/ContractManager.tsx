@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Contract, Budget, Client, Project, Vendor, ContractStatus, PaymentInstallment } from '@/types';
 import { getContracts, saveContract, getBudgets, getClients, getProjects, getVendor, deleteContract } from '@/services/db';
 import { generateContractText } from '@/services/geminiService';
-import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, Edit3, Eye, FileType, Trash2, Maximize2, AlertCircle } from 'lucide-react';
+import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, Edit3, Eye, FileType, Trash2, Maximize2, AlertCircle, Calculator, ArrowRight } from 'lucide-react';
 
 // --- MADECAS LOGO SVG ---
 const MADECAS_LOGO_SVG = `
@@ -51,6 +51,8 @@ const ContractManager: React.FC = () => {
   // Form State
   const [selectedBudgetId, setSelectedBudgetId] = useState('');
   const [startDate, setStartDate] = useState('');
+  const [plazoInstalacion, setPlazoInstalacion] = useState(30);
+  const [lugarSuscripcion, setLugarSuscripcion] = useState('Osorno');
   const [metodoPago, setMetodoPago] = useState<Contract['metodo_pago']>('Transferencia');
   const [numCuotas, setNumCuotas] = useState(1);
   const [payments, setPayments] = useState<PaymentInstallment[]>([
@@ -88,6 +90,11 @@ const ContractManager: React.FC = () => {
         ...p,
         monto: Math.round(selectedBudget.monto_total * (p.porcentaje / 100))
       })));
+      
+      // Inherit plazos/locations if budget has them
+      if (selectedBudget.plazo_instalacion_dias) setPlazoInstalacion(selectedBudget.plazo_instalacion_dias);
+      if (selectedBudget.lugar_suscripcion) setLugarSuscripcion(selectedBudget.lugar_suscripcion);
+      if (selectedBudget.fecha_inicio_obra) setStartDate(selectedBudget.fecha_inicio_obra);
     }
   }, [selectedBudget]);
 
@@ -119,7 +126,16 @@ const ContractManager: React.FC = () => {
     setViewMode('preview');
     
     // Pass the payments exactly as configured
-    const text = await generateContractText(selectedClient, vendor, selectedProject, selectedBudget, payments, startDate);
+    const text = await generateContractText(
+        selectedClient, 
+        vendor, 
+        selectedProject, 
+        selectedBudget, 
+        payments, 
+        startDate,
+        plazoInstalacion,
+        lugarSuscripcion
+    );
     
     if (text.startsWith("Error de conexión con IA")) {
         let msg = 'Error al generar contrato con IA';
@@ -141,6 +157,14 @@ const ContractManager: React.FC = () => {
   const handleFinalize = () => {
     if (!selectedClient || !selectedProject || !selectedBudget || !vendor) return;
     
+    const deliveryDate = new Date(startDate);
+    let addedDays = 0;
+    while (addedDays < plazoInstalacion) {
+        deliveryDate.setDate(deliveryDate.getDate() + 1);
+        const day = deliveryDate.getDay();
+        if (day !== 0 && day !== 6) addedDays++; // Mon-Fri
+    }
+
     // Create the contract record with SNAPSHOTS to ensure historical data integrity
     const newContract: Contract = {
       id: crypto.randomUUID(),
@@ -156,6 +180,12 @@ const ContractManager: React.FC = () => {
       hitos_pago: payments,
       estado: ContractStatus.GENERATED,
       contenido_texto: generatedText,
+      
+      // Plazos y Fechas
+      plazo_instalacion_dias: plazoInstalacion,
+      fecha_inicio_obra: startDate,
+      fecha_entrega_estimada: deliveryDate.toISOString().split('T')[0],
+      lugar_suscripcion: lugarSuscripcion,
       
       // Saving snapshots: If the client changes address later, the contract remains valid with original data
       cliente_snapshot: selectedClient,
@@ -542,40 +572,85 @@ const ContractManager: React.FC = () => {
         {/* Left Panel: Configuration */}
         <div className="w-full lg:w-[420px] shrink-0 flex flex-col gap-6 overflow-y-auto pr-2 pb-20">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-            <h3 className="text-lg font-bold mb-4 text-slate-800">1. Configuración Base</h3>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Seleccionar Presupuesto</label>
-            <select className="w-full p-2.5 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500" 
+            <h3 className="text-lg font-bold mb-4 text-slate-800 flex items-center gap-2">
+              <Calculator size={20} className="text-orange-600" /> 1. Presupuesto / Cotización
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">Selecciona el presupuesto aprobado. Esto cargará automáticamente los montos y datos técnicos.</p>
+            
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Presupuesto Vinculado</label>
+            <select className="w-full p-2.5 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-orange-500 transition-all cursor-pointer" 
               value={selectedBudgetId} onChange={e => setSelectedBudgetId(e.target.value)}>
-              <option value="">-- Seleccionar --</option>
+              <option value="">-- Seleccionar una cotización --</option>
               {budgets.map(b => {
                 const c = clients.find(cl => cl.id === b.cliente_id);
-                return <option key={b.id} value={b.id}>#{b.id.slice(0,4)} - {c?.nombre} - ${b.monto_total.toLocaleString()}</option>;
+                const p = projects.find(pr => pr.id === b.proyecto_id);
+                return (
+                  <option key={b.id} value={b.id}>
+                    {c?.nombre || 'S/N'} - {p?.modelo || 'Personalizada'} (${b.monto_total.toLocaleString()})
+                  </option>
+                );
               })}
             </select>
 
             {selectedBudget && selectedClient && selectedProject && (
-              <div className="mt-4 p-4 bg-emerald-50 rounded-lg text-sm space-y-2 border border-emerald-100">
-                <p><strong className="text-emerald-800">Cliente:</strong> {selectedClient.nombre}</p>
-                <p><strong className="text-emerald-800">Modelo:</strong> {selectedProject.modelo}</p>
-                <p><strong className="text-emerald-800">Total:</strong> ${selectedBudget.monto_total.toLocaleString()}</p>
+              <div className="mt-4 p-4 bg-orange-50 rounded-xl text-xs space-y-2 border border-orange-100 animate-in fade-in zoom-in-95">
+                <div className="flex justify-between border-b border-orange-100 pb-1">
+                  <span className="text-slate-500">Cliente:</span>
+                  <span className="font-bold text-slate-800">{selectedClient.nombre}</span>
+                </div>
+                <div className="flex justify-between border-b border-orange-100 pb-1">
+                  <span className="text-slate-500">Proyecto:</span>
+                  <span className="font-bold text-slate-800">{selectedProject.modelo}</span>
+                </div>
+                <div className="flex justify-between pt-1">
+                  <span className="text-slate-500">Valor Total:</span>
+                  <span className="font-bold text-orange-700 text-sm">${selectedBudget.monto_total.toLocaleString()}</span>
+                </div>
               </div>
             )}
           </div>
 
           {selectedBudget && (
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4 animate-in slide-in-from-left-5">
-                  <h3 className="text-lg font-bold text-slate-800">2. Fechas Clave</h3>
-                  <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
-                        <Calendar size={16} className="text-emerald-600" /> Inicio de Obra
-                      </label>
-                      <input 
-                        type="date" 
-                        required
-                        className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500" 
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                      />
+                  <h3 className="text-lg font-bold text-slate-800">2. Fechas y Plazos</h3>
+                  <div className="grid grid-cols-1 gap-4">
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
+                            <Calendar size={16} className="text-emerald-600" /> Inicio de Obra
+                          </label>
+                          <input 
+                            type="date" 
+                            required
+                            className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500" 
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                          />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                          <div>
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Días de Montaje</label>
+                              <div className="relative">
+                                  <input 
+                                    type="number"
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                                    value={plazoInstalacion}
+                                    onChange={(e) => setPlazoInstalacion(parseInt(e.target.value) || 0)}
+                                  />
+                                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">HÁBILES</span>
+                              </div>
+                          </div>
+                          <div>
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ciudad Suscrip.</label>
+                              <input 
+                                type="text"
+                                className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                                value={lugarSuscripcion}
+                                onChange={(e) => setLugarSuscripcion(e.target.value)}
+                                placeholder="Ej: Osorno"
+                              />
+                          </div>
+                      </div>
                   </div>
               </div>
           )}
@@ -738,11 +813,29 @@ const ContractManager: React.FC = () => {
 
           {/* Canvas / Paper Area */}
           <div className="flex-1 overflow-auto p-8 flex justify-center bg-slate-200/50">
-            {!generatedText && (
-              <div className="flex flex-col items-center justify-center text-slate-400 mt-20">
-                <FileText size={64} className="mb-4 opacity-20" />
-                <p className="text-lg font-medium text-slate-500">Área de Previsualización</p>
-                <p className="text-sm max-w-xs text-center mt-2 opacity-70">El contrato generado aparecerá aquí.</p>
+            {!selectedBudgetId && (
+              <div className="flex flex-col items-center justify-center text-slate-400 mt-20 p-8 text-center animate-in zoom-in-95">
+                <div className="w-20 h-20 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center mb-6">
+                    <Calculator size={40} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-2">Paso 1: Selecciona un Presupuesto</h3>
+                <p className="text-sm max-w-xs text-center mt-2 text-slate-500 leading-relaxed mb-6">
+                    El contrato se genera a partir de un presupuesto aprobado por el cliente. Selecciona uno a la izquierda para comenzar.
+                </p>
+                <button 
+                  onClick={() => window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }))}
+                  className="px-5 py-2.5 bg-slate-800 text-white rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-slate-900 transition shadow-lg shadow-slate-200"
+                >
+                    Ir a Análisis de Costos <ArrowRight size={18} />
+                </button>
+              </div>
+            )}
+
+            {selectedBudgetId && !generatedText && (
+              <div className="flex flex-col items-center justify-center text-slate-400 mt-20 animate-in fade-in duration-700">
+                <FileType size={64} className="mb-4 opacity-20 text-emerald-600" />
+                <p className="text-lg font-bold text-slate-600">Presupuesto Cargado</p>
+                <p className="text-sm max-w-xs text-center mt-2 opacity-70">Revisa los plazos y pagos a la izquierda, luego haz clic en "Generar Contrato".</p>
               </div>
             )}
 

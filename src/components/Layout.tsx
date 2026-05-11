@@ -58,6 +58,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
     { id: 'hub', label: 'Interoperabilidad (RUT)', icon: ExternalLink },
     { id: 'map', label: 'Georeferencia Global', icon: MapIcon },
     { id: 'ai-assistant', label: 'IA Comercial Pro', icon: BrainCircuit },
+    { id: 'settings', label: 'Configuración Empresa', icon: Settings },
   ];
 
   const removeNotification = (id: string) => {

@@ -18,8 +18,29 @@ const BudgetManager: React.FC = () => {
   const [showModelSave, setShowModelSave] = useState(false);
   
   const [formData, setFormData] = useState<Budget>({
-    id: '', cliente_id: '', proyecto_id: '', fecha: new Date().toISOString().split('T')[0], detalle_items: [], monto_total: 0
+    id: '', 
+    cliente_id: '', 
+    proyecto_id: '', 
+    fecha: new Date().toISOString().split('T')[0], 
+    detalle_items: [], 
+    monto_total: 0,
+    plazo_instalacion_dias: 30,
+    lugar_suscripcion: 'Osorno'
   });
+
+  useEffect(() => {
+    // If a project is selected but no items are present, load defaults from catalog
+    if (formData.proyecto_id && formData.detalle_items.length === 0) {
+      const project = projects.find(p => p.id === formData.proyecto_id);
+      if (project && project.especificaciones_default) {
+        setFormData(prev => ({
+          ...prev,
+          detalle_items: project.especificaciones_default || [],
+          monto_total: project.precio_base
+        }));
+      }
+    }
+  }, [formData.proyecto_id, projects]);
 
   // Temp item input
   const [newItem, setNewItem] = useState<BudgetItem>({
@@ -50,7 +71,9 @@ const BudgetManager: React.FC = () => {
       proyecto_id: '',
       fecha: new Date().toISOString().split('T')[0],
       detalle_items: [],
-      monto_total: 0
+      monto_total: 0,
+      plazo_instalacion_dias: 30,
+      lugar_suscripcion: 'Osorno'
     });
     setIsEditing(true);
   };
@@ -204,10 +227,28 @@ const BudgetManager: React.FC = () => {
   if (isEditing) {
     return (
       <div className="max-w-5xl mx-auto bg-white p-8 rounded-2xl shadow-lg border border-slate-200 animate-in slide-in-from-bottom-5 duration-300">
-        <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-slate-800">
-          <Calculator className="text-orange-600" /> 
-          {formData.id ? 'Editar Presupuesto' : 'Nuevo Presupuesto'}
-        </h3>
+        <div className="flex justify-between items-center mb-8 border-b border-slate-100 pb-4">
+          <h3 className="text-xl font-black flex items-center gap-2 text-slate-800">
+            <Calculator className="text-orange-600" /> 
+            {formData.id ? 'Editar Presupuesto' : 'Nueva Cotización Técnica'}
+          </h3>
+          <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-orange-600 text-white text-[10px] flex items-center justify-center font-bold">1</div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Cliente</span>
+              </div>
+              <div className="w-4 h-px bg-slate-200"></div>
+              <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-orange-600 text-white text-[10px] flex items-center justify-center font-bold">2</div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Cubicación</span>
+              </div>
+              <div className="w-4 h-px bg-slate-200"></div>
+              <div className="flex items-center gap-2 opacity-50">
+                  <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-500 text-[10px] flex items-center justify-center font-bold">3</div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Cierre</span>
+              </div>
+          </div>
+        </div>
         
         {/* File Upload Section */}
         <div className="mb-8 group">
@@ -277,6 +318,19 @@ const BudgetManager: React.FC = () => {
               <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Emisión</label>
               <input type="date" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
                 value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Plazo de Instalación (Días Hábiles)</label>
+              <input type="number" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                value={formData.plazo_instalacion_dias} onChange={e => setFormData({...formData, plazo_instalacion_dias: Number(e.target.value)})} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Ciudad de Suscripción</label>
+              <input type="text" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                value={formData.lugar_suscripcion} onChange={e => setFormData({...formData, lugar_suscripcion: e.target.value})} />
             </div>
           </div>
 
