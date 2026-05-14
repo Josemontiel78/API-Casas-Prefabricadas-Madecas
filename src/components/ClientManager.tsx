@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Client } from '@/types';
-import { getClients, saveClient, deleteClient } from '@/services/db';
+import { getClients, saveClient, deleteClient, subscribeToClients } from '@/services/db';
 import { Plus, Search, Save, Users, Trash2, Phone, Mail, MapPin, Map as MapIcon, Edit3 } from 'lucide-react';
 import MapProjectPicker from '@/components/MapProjectPicker';
 
@@ -14,19 +14,43 @@ const ClientManager: React.FC = () => {
   });
 
   useEffect(() => {
-    const data = getClients();
-    setClients(data);
-    setFilteredClients(data);
+    const unsubClients = subscribeToClients((data) => {
+        setClients(data);
+        setFilteredClients(data);
+    });
 
-    // Check for dashboard deep-link
-    const triggerId = window.localStorage.getItem('dash_trigger_client_id');
-    if (triggerId) {
-        const client = data.find(c => c.id === triggerId);
-        if (client) {
-            handleEdit(client);
+    const timer = setTimeout(() => {
+        const triggerId = window.localStorage.getItem('dash_trigger_client_id');
+        const focusFields = window.localStorage.getItem('dash_focus_field');
+        
+        if (triggerId) {
+            // Check if client is already loaded
+            const client = clients.find(c => c.id === triggerId);
+            if (client) {
+                handleEdit(client);
+                setTimeout(() => {
+                    const fields = focusFields ? focusFields.split(',') : [];
+                    fields.forEach(field => {
+                        const el = document.querySelector(`[name="${field}"]`);
+                        if (el) {
+                            el.classList.add('animate-pulse', 'ring-2', 'ring-red-500', 'border-red-500');
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            setTimeout(() => {
+                                el.classList.remove('animate-pulse', 'ring-2', 'ring-red-500', 'border-red-500');
+                            }, 5000);
+                        }
+                    });
+                }, 500);
+            }
+            window.localStorage.removeItem('dash_trigger_client_id');
+            window.localStorage.removeItem('dash_focus_field');
         }
-        window.localStorage.removeItem('dash_trigger_client_id');
-    }
+    }, 1000);
+
+    return () => {
+        unsubClients();
+        clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -47,11 +71,9 @@ const ClientManager: React.FC = () => {
     setIsEditing(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    saveClient(formData);
-    const updated = getClients();
-    setClients(updated);
+    await saveClient(formData);
     setIsEditing(false);
     
     // Trigger notification
@@ -72,11 +94,10 @@ const ClientManager: React.FC = () => {
     setIsEditing(true);
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
       if(window.confirm('¿Estás seguro de eliminar este cliente? Se perderán sus datos de contacto.')) {
-          deleteClient(id);
-          setClients(getClients());
+          await deleteClient(id);
           const event = new CustomEvent('app-notification', { 
             detail: { message: 'Cliente eliminado', type: 'info' } 
           });

@@ -16,6 +16,7 @@
     "@vis.gl/react-google-maps": "^1.8.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "firebase": "^12.13.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.555.0",
     "motion": "^12.38.0",
@@ -27,8 +28,11 @@
     "tailwindcss": "^4.2.4"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@firebase/eslint-plugin-security-rules": "^0.0.2",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "eslint": "^10.3.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

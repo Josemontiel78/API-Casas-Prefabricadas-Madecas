@@ -15,7 +15,8 @@ import {
   Info,
   BrainCircuit,
   Map as MapIcon,
-  ExternalLink
+  ExternalLink,
+  Brush
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -28,6 +29,31 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, setRole }) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [theme, setTheme] = useState({
+    background: '#f8fafc',
+    text: '#0f172a',
+    card: '#ffffff',
+    menu: '#0f172a',
+    button: '#10b981'
+  });
+
+  useEffect(() => {
+    // Load theme
+    const saved = localStorage.getItem('app_theme');
+    if (saved) {
+      try {
+        setTheme(JSON.parse(saved));
+      } catch (e) {
+        console.error("Error parsing theme", e);
+      }
+    }
+
+    const handleThemeUpdate = (e: any) => {
+      setTheme(e.detail);
+    };
+    window.addEventListener('app-theme-update', handleThemeUpdate);
+    return () => window.removeEventListener('app-theme-update', handleThemeUpdate);
+  }, []);
 
   // Listen for custom events to show notifications
   useEffect(() => {
@@ -49,24 +75,44 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
     return () => window.removeEventListener('app-notification', handleNotification);
   }, []);
 
-  const navItems = [
+  const groupVenta = [
+    { id: 'clients', label: 'Registro de Clientes', icon: Users },
+    { id: 'designs', label: 'Diseños y Modelos', icon: Brush },
+    { id: 'budgets', label: 'Presupuestos', icon: Calculator },
+    { id: 'contracts', label: 'Contratos y Pagos', icon: FileSignature },
+  ];
+
+  const groupEmpresa = [
     { id: 'dashboard', label: 'Monitor de Ventas', icon: Home },
-    { id: 'clients', label: '1. Registro de Clientes', icon: Users },
-    { id: 'projects', label: '2. Catálogo de Modelos', icon: FolderOpen },
-    { id: 'budgets', label: '3. Análisis de Costos', icon: Calculator },
-    { id: 'contracts', label: '4. Cierre y Gestión de Pagos', icon: FileSignature },
-    { id: 'hub', label: 'Interoperabilidad (RUT)', icon: ExternalLink },
+    { id: 'hub', label: 'Interoperabilidad', icon: ExternalLink },
+    { id: 'cubicacion', label: 'Cubicación Inteligente', icon: Calculator },
     { id: 'map', label: 'Georeferencia Global', icon: MapIcon },
     { id: 'ai-assistant', label: 'IA Comercial Pro', icon: BrainCircuit },
+    { id: 'projects', label: 'Gestión de Obras', icon: FolderOpen },
     { id: 'settings', label: 'Configuración Empresa', icon: Settings },
   ];
 
-  const removeNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
+  const allItems = [...groupVenta, ...groupEmpresa];
+
+  const NavButton = ({ item }: { item: any }) => (
+    <button
+      onClick={() => setView(item.id as ViewState)}
+      className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
+        currentView === item.id 
+          ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/50' 
+          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+      }`}
+    >
+      <item.icon size={18} className={currentView === item.id ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'} />
+      <span className="font-medium text-xs">{item.label}</span>
+      {item.id === 'ai-assistant' && (
+          <span className="ml-auto bg-emerald-500/20 text-emerald-400 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-500/30">PRO</span>
+      )}
+    </button>
+  );
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
+    <div className="flex h-screen font-sans transition-colors duration-500 overflow-hidden" style={{ backgroundColor: theme.background, color: theme.text }}>
       
       {/* Toast Container */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
@@ -78,7 +124,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
             {n.type === 'error' && <AlertCircle size={18} />}
             {n.type === 'info' && <Info size={18} />}
             <p className="text-sm font-medium flex-1">{n.message}</p>
-            <button onClick={() => removeNotification(n.id)} className="opacity-70 hover:opacity-100">
+            <button onClick={() => setNotifications(prev => prev.filter(p => p.id !== n.id))} className="opacity-70 hover:opacity-100">
               <X size={16} />
             </button>
           </div>
@@ -86,36 +132,42 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
       </div>
 
       {/* Sidebar */}
-      <aside className="w-72 bg-slate-900 text-white flex flex-col shadow-2xl z-20">
-        <div className="p-8 pb-4">
+      <aside className="w-64 flex flex-col shadow-2xl z-20 shrink-0 transition-hidden overflow-hidden" style={{ backgroundColor: theme.menu }}>
+        <div className="p-6 pb-2">
           <div className="flex items-center gap-3 text-emerald-400 mb-1">
              <div className="bg-emerald-500/20 p-2 rounded-lg">
-                <FileSignature size={24} /> 
+                <FileSignature size={20} /> 
              </div>
-             <h1 className="text-xl font-bold tracking-tight">PrefabContracts</h1>
+             <h1 className="text-lg font-bold tracking-tight">MADECAS AI</h1>
           </div>
-          <p className="text-xs text-slate-400 pl-1">Gestión & IA Legal</p>
+          <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest pl-1">Venta Prefabricadas</p>
         </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-1">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setView(item.id as ViewState)}
-              className={`w-full flex items-center space-x-3 px-4 py-3.5 rounded-xl transition-all duration-200 group ${
-                currentView === item.id 
-                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/50 translate-x-1' 
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
-              }`}
-            >
-              <item.icon size={20} className={currentView === item.id ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'} />
-              <span className="font-medium text-sm">{item.label}</span>
-              {item.id === 'ai-assistant' && (
-                  <span className="ml-auto bg-emerald-500/20 text-emerald-400 text-[10px] font-bold px-1.5 py-0.5 rounded border border-emerald-500/30">PRO</span>
-              )}
-            </button>
-          ))}
-        </nav>
+        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-8 scrollbar-hide">
+          {/* Section: Venta Cliente */}
+          <div>
+            <h3 className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-4 pl-4">Venta Cliente</h3>
+            <div className="space-y-1">
+              {groupVenta.map(item => (
+                <div key={item.id}>
+                  <NavButton item={item} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Section: Empresa */}
+          <div>
+            <h3 className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-4 pl-4">Empresa</h3>
+            <div className="space-y-1">
+              {groupEmpresa.map(item => (
+                <div key={item.id}>
+                  <NavButton item={item} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
 
         <div className="p-6 border-t border-slate-800 bg-slate-950">
           <div className="flex items-center justify-between mb-4">
@@ -126,10 +178,10 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
           </div>
           <button 
             onClick={() => setRole(role === 'admin' ? 'vendedor' : 'admin')}
-            className="w-full text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg flex items-center justify-center space-x-2 transition border border-slate-700"
+            className="w-full text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg flex items-center justify-center space-x-2 transition border border-slate-700 font-bold uppercase tracking-wider"
           >
-            <Settings size={14} />
-            <span>Cambiar Rol</span>
+            <Settings size={12} />
+            <span>Switch Role</span>
           </button>
         </div>
       </aside>
@@ -138,9 +190,9 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-50">
         <header className="bg-white border-b border-slate-200 min-h-20 flex items-center justify-between px-8 z-10 py-4 md:py-0">
           <div className="flex flex-col md:flex-row md:items-center gap-4">
-              <h2 className="text-2xl font-bold text-slate-800 capitalize tracking-tight flex items-center gap-2 whitespace-nowrap">
+              <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 whitespace-nowrap">
                 {currentView === 'ai-assistant' && <BrainCircuit className="text-emerald-600" />}
-                {navItems.find(i => i.id === currentView)?.label.replace(/^\d\.\s/, '') || 'Panel'}
+                {allItems.find(i => i.id === currentView)?.label || 'Panel'}
               </h2>
               
               {/* Workflow Stepper */}

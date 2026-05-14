@@ -1,6 +1,6 @@
 {
   "name": "PrefabContracts AI",
-  "description": "Intelligent contract management system for prefabricated houses using Google Gemini AI.",
+  "description": "Plataforma integral de gestión comercial para casas prefabricadas con IA, cubicación automática, georeferencia y análisis estratégico.",
   "requestFramePermissions": [
     "microphone",
     "geolocation"

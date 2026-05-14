@@ -10,16 +10,17 @@ import AIAssistant from '@/components/AIAssistant';
 import CommercialHub from '@/components/CommercialHub';
 import ProjectMapOverview from '@/components/ProjectMapOverview';
 import VendorSettings from '@/components/VendorSettings';
-import { seedDatabase } from '@/services/db';
+import CubicacionManager from '@/components/CubicacionManager';
+import DesignGallery from '@/components/DesignGallery';
+import Login from '@/components/Login';
 import { ViewState, UserRole } from '@/types';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [role, setRole] = useState<UserRole>('vendedor');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    seedDatabase();
-
     const handleViewChange = (e: any) => {
       if (e.detail) {
         setCurrentView(e.detail as ViewState);
@@ -27,8 +28,19 @@ const App: React.FC = () => {
     };
 
     window.addEventListener('app-view-change', handleViewChange);
-    return () => window.removeEventListener('app-view-change', handleViewChange);
+    setLoading(false); // No longer waiting for auth
+    return () => {
+      window.removeEventListener('app-view-change', handleViewChange);
+    };
   }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   const renderContent = () => {
     switch (currentView) {
@@ -40,6 +52,8 @@ const App: React.FC = () => {
       case 'budgets': return <BudgetManager />;
       case 'contracts': return <ContractManager />;
       case 'ai-assistant': return <AIAssistant />;
+      case 'cubicacion': return <CubicacionManager />;
+      case 'designs': return <DesignGallery />;
       case 'settings': return <VendorSettings />;
       default: return <Dashboard />;
     }

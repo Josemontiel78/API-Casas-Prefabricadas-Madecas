@@ -1,0 +1,143 @@
+{
+  "entities": {
+    "Client": {
+      "title": "Client",
+      "description": "Information about customers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nombre": { "type": "string" },
+        "rut": { "type": "string" },
+        "domicilio": { "type": "string" },
+        "telefono": { "type": "string" },
+        "correo": { "type": "string" },
+        "fecha_registro": { "type": "string", "format": "date-time" },
+        "vendedor_id": { "type": "string" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        },
+        "notas_comerciales": { "type": "string" }
+      },
+      "required": ["id", "nombre", "rut"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Housing models and specific project details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "cliente_id": { "type": "string" },
+        "modelo": { "type": "string" },
+        "superficie_m2": { "type": "number" },
+        "precio_base": { "type": "number" },
+        "etapa": { "type": "string", "enum": ["Cotización", "Venta", "Construcción", "Entregado"] },
+        "materiales_principales": { "type": "array", "items": { "type": "string" } },
+        "adicionales": { "type": "array", "items": { "type": "string" } },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        }
+      },
+      "required": ["id", "modelo", "etapa"]
+    },
+    "Budget": {
+      "title": "Budget",
+      "description": "Quotation details for a project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "cliente_id": { "type": "string" },
+        "proyecto_id": { "type": "string" },
+        "fecha": { "type": "string", "format": "date" },
+        "monto_total": { "type": "number" },
+        "plazo_instalacion_dias": { "type": "number" },
+        "lugar_suscripcion": { "type": "string" }
+      },
+      "required": ["id", "cliente_id", "proyecto_id", "fecha", "monto_total"]
+    },
+    "Contract": {
+      "title": "Contract",
+      "description": "Legal agreement details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "cliente_id": { "type": "string" },
+        "vendedor_id": { "type": "string" },
+        "proyecto_id": { "type": "string" },
+        "presupuesto_id": { "type": "string" },
+        "fecha_contrato": { "type": "string", "format": "date" },
+        "monto_total": { "type": "number" },
+        "estado": { "type": "string" },
+        "contenido_texto": { "type": "string" },
+        "plazo_instalacion_dias": { "type": "number" },
+        "fecha_inicio_obra": { "type": "string", "format": "date" },
+        "fecha_entrega_estimada": { "type": "string", "format": "date" },
+        "lugar_suscripcion": { "type": "string" }
+      },
+      "required": ["id", "cliente_id", "proyecto_id", "presupuesto_id", "fecha_contrato", "estado"]
+    },
+    "Vendor": {
+      "title": "Vendor",
+      "description": "Company settings and bank details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nombre": { "type": "string" },
+        "rut": { "type": "string" },
+        "domicilio": { "type": "string" },
+        "telefono": { "type": "string" },
+        "correo": { "type": "string" },
+        "banco_nombre": { "type": "string" },
+        "banco_tipo_cuenta": { "type": "string" },
+        "banco_numero_cuenta": { "type": "string" }
+      },
+      "required": ["id", "nombre", "rut"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Administrator roles",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" }
+      },
+      "required": ["email"]
+    }
+  },
+  "firestore": {
+    "clients": {
+      "schema": "Client",
+      "description": "Collection of clients"
+    },
+    "projects": {
+      "schema": "Project",
+      "description": "Collection of projects"
+    },
+    "budgets": {
+      "schema": "Budget",
+      "description": "Collection of budgets"
+    },
+    "contracts": {
+      "schema": "Contract",
+      "description": "Collection of signed or drafted contracts"
+    },
+    "vendors": {
+      "schema": "Vendor",
+      "description": "Collection of vendor settings (usually one document)"
+    },
+    "admins": {
+      "schema": "Admin",
+      "description": "Administrator users"
+    },
+    "house_models": {
+      "schema": "HouseModel",
+      "description": "Collection of available house designs in the catalog"
+    }
+  }
+}

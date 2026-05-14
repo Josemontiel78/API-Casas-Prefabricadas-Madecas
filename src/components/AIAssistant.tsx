@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { getClients, getProjects, getBudgets, getContracts, getVendor } from '@/services/db';
-import { generateBusinessAnalysis } from '@/services/geminiService';
+import { generateBusinessAnalysis } from '@/services/gemini';
 import { Send, Mic, BrainCircuit, FileText, PieChart, TrendingUp, Download, Sparkles, StopCircle, RefreshCw, BarChart3, Mail } from 'lucide-react';
 
 interface Message {
@@ -14,7 +14,7 @@ const AIAssistant: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
     { 
       role: 'assistant', 
-      content: 'Hola, soy tu Analista Virtual de MADECAS. Tengo acceso a todos tus contratos y presupuestos. ¿En qué puedo ayudarte hoy?',
+      content: 'Hola, soy tu Analista Virtual de MADECAS (IA Comercial Pro). Tengo acceso a todos tus presupuestos, contratos y datos de clientes. ¿En qué análisis estratégico puedo ayudarte hoy?',
       timestamp: new Date().toLocaleTimeString()
     }
   ]);
@@ -27,14 +27,21 @@ const AIAssistant: React.FC = () => {
   const [dataContext, setDataContext] = useState<any>(null);
 
   useEffect(() => {
-    // Load fresh data every time component mounts
-    setDataContext({
-        clients: getClients(),
-        projects: getProjects(),
-        budgets: getBudgets(),
-        contracts: getContracts(),
-        vendor: getVendor()
-    });
+    const loadAllData = async () => {
+        try {
+            const [clients, projects, budgets, contracts, vendor] = await Promise.all([
+                getClients(),
+                getProjects(),
+                getBudgets(),
+                getContracts(),
+                getVendor()
+            ]);
+            setDataContext({ clients, projects, budgets, contracts, vendor });
+        } catch (error) {
+            console.error("Error loading context for AI:", error);
+        }
+    };
+    loadAllData();
   }, []);
 
   const scrollToBottom = () => {
@@ -159,7 +166,7 @@ const AIAssistant: React.FC = () => {
                       {msg.role === 'assistant' && (
                           <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100 opacity-70">
                               <BrainCircuit size={16} /> 
-                              <span className="text-xs font-bold uppercase">Análisis Madecas AI</span>
+                              <span className="text-xs font-bold uppercase tracking-widest">IA COMERCIAL PRO</span>
                               <span className="ml-auto text-[10px]">{msg.timestamp}</span>
                           </div>
                       )}

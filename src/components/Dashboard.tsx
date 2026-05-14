@@ -59,126 +59,131 @@ const Dashboard: React.FC = () => {
   const [conversionData, setConversionData] = useState<any[]>([]);
 
   useEffect(() => {
-    const clients = getClients();
-    const projects = getProjects();
-    const budgets = getBudgets();
-    const contracts = getContracts();
+    const loadData = async () => {
+      const [clients, projects, budgets, contracts] = await Promise.all([
+        getClients(),
+        getProjects(),
+        getBudgets(),
+        getContracts()
+      ]);
 
-    const totalVolume = contracts.reduce((sum, c) => sum + (c.monto_total || 0), 0);
-    const pendingVolume = budgets.reduce((sum, b) => {
+      const totalVolume = contracts.reduce((sum, c) => sum + (c.monto_total || 0), 0);
+      const pendingVolume = budgets.reduce((sum, b) => {
+          const isContracted = contracts.some(c => c.presupuesto_id === b.id);
+          return isContracted ? sum : sum + b.monto_total;
+      }, 0);
+
+      setStats({
+        totalClients: clients.length,
+        activeProjects: projects.length,
+        totalQuotes: budgets.length,
+        signedContracts: contracts.length,
+        totalVolume,
+        pendingVolume
+      });
+
+      setRecentContracts(contracts.slice(-5).reverse());
+
+      // Generate Warnings
+      const newWarnings: Warning[] = [];
+      const now = new Date();
+
+      budgets.forEach(b => {
         const isContracted = contracts.some(c => c.presupuesto_id === b.id);
-        return isContracted ? sum : sum + b.monto_total;
-    }, 0);
+        if (!isContracted) {
+          const quoteDate = new Date(b.fecha);
+          const diffDays = Math.floor((now.getTime() - quoteDate.getTime()) / (1000 * 3600 * 24));
+          
+          if (diffDays >= 3) {
+            newWarnings.push({
+              id: `stale-${b.id}`,
+              type: 'stale',
+              title: 'Cotización Estancada',
+              message: `El cliente lleva ${diffDays} días sin cerrar su cotización de $${b.monto_total.toLocaleString()}.`,
+              severity: diffDays > 7 ? 'high' : 'medium',
+              refId: b.id
+            });
+          }
+        }
+      });
 
-    setStats({
-      totalClients: clients.length,
-      activeProjects: projects.length,
-      totalQuotes: budgets.length,
-      signedContracts: contracts.length,
-      totalVolume,
-      pendingVolume
-    });
+      clients.forEach(c => {
+        const missingFields = [];
+        if (!c.correo) missingFields.push('Correo');
+        if (!c.telefono) missingFields.push('Teléfono');
+        if (!c.location) missingFields.push('Ubicación GPS');
 
-    setRecentContracts(contracts.slice(-5).reverse());
-
-    // Generate Warnings
-    const newWarnings: Warning[] = [];
-    const now = new Date();
-
-    budgets.forEach(b => {
-      const isContracted = contracts.some(c => c.presupuesto_id === b.id);
-      if (!isContracted) {
-        const quoteDate = new Date(b.fecha);
-        const diffDays = Math.floor((now.getTime() - quoteDate.getTime()) / (1000 * 3600 * 24));
-        
-        if (diffDays >= 3) {
+        if (missingFields.length > 0) {
           newWarnings.push({
-            id: `stale-${b.id}`,
-            type: 'stale',
-            title: 'Cotización Estancada',
-            message: `El cliente lleva ${diffDays} días sin cerrar su cotización de $${b.monto_total.toLocaleString()}.`,
-            severity: diffDays > 7 ? 'high' : 'medium',
-            refId: b.id
+            id: `missing-${c.id}`,
+            type: 'missing_data',
+            title: 'Datos Incompletos',
+            message: `El cliente ${c.nombre} no tiene: ${missingFields.join(', ')}.`,
+            severity: 'medium',
+            refId: c.id
           });
         }
-      }
-    });
+      });
 
-    clients.forEach(c => {
-      const missingFields = [];
-      if (!c.correo) missingFields.push('Correo');
-      if (!c.telefono) missingFields.push('Teléfono');
-      if (!c.location) missingFields.push('Ubicación GPS');
+      setWarnings(newWarnings.sort((a, b) => {
+        const severityOrder = { high: 0, medium: 1, low: 2 };
+        return severityOrder[a.severity] - severityOrder[b.severity];
+      }));
 
-      if (missingFields.length > 0) {
-        newWarnings.push({
-          id: `missing-${c.id}`,
-          type: 'missing_data',
-          title: 'Datos Incompletos',
-          message: `El cliente ${c.nombre} no tiene: ${missingFields.join(', ')}.`,
-          severity: 'medium',
-          refId: c.id
+      // Generate Chart Data (Last 6 months)
+      const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+      const last6Months = [];
+      const today = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        last6Months.push({
+          month: monthNames[d.getMonth()],
+          monthIdx: d.getMonth(),
+          year: d.getFullYear(),
+          ventas: 100, 
+          cotizado: 200, 
+          realVentas: 0,
+          realCotizado: 0
         });
       }
-    });
 
-    setWarnings(newWarnings.sort((a, b) => {
-      const severityOrder = { high: 0, medium: 1, low: 2 };
-      return severityOrder[a.severity] - severityOrder[b.severity];
-    }));
-
-    // Generate Chart Data (Last 6 months)
-    const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    const last6Months = [];
-    const today = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-      last6Months.push({
-        month: monthNames[d.getMonth()],
-        monthIdx: d.getMonth(),
-        year: d.getFullYear(),
-        ventas: 100, // Small baseline to ensure line visibility on mostly empty data
-        cotizado: 200, // Small baseline
-        realVentas: 0,
-        realCotizado: 0
+      contracts.forEach(c => {
+        if (!c.fecha_contrato) return;
+        const d = new Date(c.fecha_contrato);
+        if (isNaN(d.getTime())) return;
+        const m = d.getMonth();
+        const y = d.getFullYear();
+        const point = last6Months.find(p => p.monthIdx === m && p.year === y);
+        if (point) {
+            point.ventas += c.monto_total;
+            point.realVentas += c.monto_total;
+        }
       });
-    }
 
-    contracts.forEach(c => {
-      if (!c.fecha_contrato) return;
-      const d = new Date(c.fecha_contrato);
-      if (isNaN(d.getTime())) return;
-      const m = d.getMonth();
-      const y = d.getFullYear();
-      const point = last6Months.find(p => p.monthIdx === m && p.year === y);
-      if (point) {
-          point.ventas += c.monto_total;
-          point.realVentas += c.monto_total;
-      }
-    });
+      budgets.forEach(b => {
+        if (!b.fecha) return;
+        const d = new Date(b.fecha);
+        if (isNaN(d.getTime())) return;
+        const m = d.getMonth();
+        const y = d.getFullYear();
+        const point = last6Months.find(p => p.monthIdx === m && p.year === y);
+        if (point) {
+            point.cotizado += b.monto_total;
+            point.realCotizado += b.monto_total;
+        }
+      });
 
-    budgets.forEach(b => {
-      if (!b.fecha) return;
-      const d = new Date(b.fecha);
-      if (isNaN(d.getTime())) return;
-      const m = d.getMonth();
-      const y = d.getFullYear();
-      const point = last6Months.find(p => p.monthIdx === m && p.year === y);
-      if (point) {
-          point.cotizado += b.monto_total;
-          point.realCotizado += b.monto_total;
-      }
-    });
+      setChartData(last6Months);
 
-    setChartData(last6Months);
+      // Conversion Data
+      const lost = Math.max(0, budgets.length - contracts.length);
+      setConversionData([
+        { name: 'Cerrados', value: contracts.length || 0, color: '#10b981' },
+        { name: 'En Proceso', value: lost || 0, color: '#f59e0b' }
+      ]);
+    };
 
-    // Conversion Data
-    const lost = Math.max(0, budgets.length - contracts.length);
-    setConversionData([
-      { name: 'Cerrados', value: contracts.length || 0, color: '#10b981' },
-      { name: 'En Proceso', value: lost || 0, color: '#f59e0b' }
-    ]);
-
+    loadData();
   }, []);
 
   const handleManage = (warn: Warning) => {
@@ -187,6 +192,7 @@ const Dashboard: React.FC = () => {
         case 'missing_data': 
             view = 'clients'; 
             window.localStorage.setItem('dash_trigger_client_id', warn.refId);
+            window.localStorage.setItem('dash_focus_field', 'telefono,correo,domicilio');
             break;
         case 'stale':
         case 'pending_contract': 
@@ -197,6 +203,14 @@ const Dashboard: React.FC = () => {
     }
     window.dispatchEvent(new CustomEvent('app-view-change', { detail: view }));
   };
+
+  const EmptyChartNotice = ({ title }: { title: string }) => (
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] z-10 rounded-2xl">
+        <TrendingUp size={32} className="text-slate-300 mb-2" />
+        <p className="text-slate-600 font-bold">Datos Insuficientes</p>
+        <p className="text-slate-400 text-[10px] uppercase font-black tracking-widest mt-1">Genera ventas o cotizaciones para {title}</p>
+    </div>
+  );
 
   const MetricCard = ({ title, value, sub, icon: Icon, color, trend }: any) => (
     <motion.div 
@@ -238,13 +252,14 @@ const Dashboard: React.FC = () => {
                   <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500"></div> Ventas</div>
                   <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-indigo-200"></div> Cotizado</div>
                 </div>
-                {chartData.every(d => d.realVentas === 0 && d.realCotizado === 0) && (
-                    <span className="text-[9px] text-amber-500 font-bold uppercase">Modo Previsualización (Sin Datos)</span>
-                )}
             </div>
           </div>
           
-          <div className="h-64 w-full">
+          {chartData.every(d => d.realVentas === 0 && d.realCotizado === 0) && (
+              <EmptyChartNotice title="ver historial" />
+          )}
+          
+          <div className="h-64 w-full min-h-[256px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
@@ -276,9 +291,10 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 flex flex-col">
+        <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 flex flex-col relative overflow-hidden">
           <h3 className="text-xl font-black text-slate-800 mb-6">Tasa de Conversión</h3>
-          <div className="flex-1 flex flex-col items-center justify-center relative">
+          {stats.totalQuotes === 0 && <EmptyChartNotice title="calcular conversión" />}
+          <div className="flex-1 flex flex-col items-center justify-center relative min-h-[240px]">
             <ResponsiveContainer width="100%" height={240}>
               <PieChart>
                 <Pie

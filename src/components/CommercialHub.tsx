@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { getClients, getClientCommercialHistory } from '@/services/db';
+import { analyzeCommercialAI } from '@/services/gemini';
 import { Client, Project, Budget, Contract } from '@/types';
-import { Search, User, Home, Calculator, FileCheck, MapPin, ExternalLink, Calendar, DollarSign, Map as MapIcon, BrainCircuit } from 'lucide-react';
+import { Search, User, Home, Calculator, FileCheck, MapPin, ExternalLink, Calendar, DollarSign, Map as MapIcon, BrainCircuit, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
@@ -21,6 +22,8 @@ let DefaultIcon = L.icon({
 
 const CommercialHub: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [clientData, setClientData] = useState<{
     client: Client;
     projects: Project[];
@@ -28,14 +31,46 @@ const CommercialHub: React.FC = () => {
     contracts: Contract[];
   } | null>(null);
 
-  const clients = getClients();
+  const [clients, setClients] = useState<Client[]>([]);
 
-  const handleSearch = (rut: string) => {
-    const history = getClientCommercialHistory(rut);
+  useEffect(() => {
+    const loadClients = async () => {
+      const data = await getClients();
+      setClients(data);
+
+      const savedRut = window.localStorage.getItem('hub_selected_client_rut');
+      if (savedRut) {
+          window.localStorage.removeItem('hub_selected_client_rut');
+          handleSearch(savedRut);
+      }
+    };
+    loadClients();
+  }, []);
+
+  const handleSearch = async (rut: string) => {
+    const history = await getClientCommercialHistory(rut);
     if (history) {
       setClientData(history);
+      
+      // Trigger AI Analysis
+      setIsAnalyzing(true);
+      try {
+          const analysis = await analyzeCommercialAI(
+              history.client, 
+              history.projects, 
+              history.budgets, 
+              history.contracts
+          );
+          setAiAnalysis(analysis);
+      } catch (err) {
+          console.error("Analysis failed", err);
+          setAiAnalysis("Error al generar el análisis comercial.");
+      } finally {
+          setIsAnalyzing(false);
+      }
     } else {
       setClientData(null);
+      setAiAnalysis(null);
     }
   };
 
@@ -47,14 +82,14 @@ const CommercialHub: React.FC = () => {
       );
       if (match) handleSearch(match.rut);
     }
-  }, [searchQuery]);
+  }, [searchQuery, clients]);
 
   return (
     <div id="commercial-hub" className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Hub Comercial Interoperable</h2>
-          <p className="text-slate-500 italic">Cruce de información experto basado en RUT / Nombre</p>
+          <h2 className="text-2xl font-bold text-slate-800 tracking-tight uppercase">Interoperabilidad</h2>
+          <p className="text-slate-500 italic">Cruce de información experto basado en RUT / Nombre para toma de decisiones.</p>
         </div>
         <div className="relative w-full md:w-96">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
@@ -131,18 +166,22 @@ const CommercialHub: React.FC = () => {
             </div>
             
             <div className="bg-indigo-600 p-6 rounded-2xl shadow-md text-white">
-              <h4 className="font-semibold mb-2 flex items-center gap-2">
+              <h4 className="font-semibold mb-2 flex items-center gap-2 uppercase tracking-tighter">
                 <BrainCircuit className="w-5 h-5" />
-                Insights de Ventas
+                IA Comercial Pro Insights
               </h4>
-              <p className="text-indigo-100 text-sm leading-relaxed">
-                {clientData.contracts.length > 0 
-                  ? "Cliente fidelizado con contrato activo. Oportunidad de Up-selling en adicionales de terminaciones."
-                  : clientData.budgets.length > 0 
-                    ? "Presupuesto pendiente. Se recomienda seguimiento comercial en 48hs. La probabilidad de cierre es alta."
-                    : "Etapa de prospección inicial detectada."
-                }
-              </p>
+              <div className="text-indigo-100 text-sm leading-relaxed whitespace-pre-wrap">
+                {isAnalyzing ? (
+                    <div className="flex flex-col items-center justify-center py-4 gap-2">
+                        <Loader2 className="animate-spin text-white/50" size={24} />
+                        <p className="text-xs font-bold animate-pulse">Analizando comportamiento del cliente...</p>
+                    </div>
+                ) : (
+                    aiAnalysis || (clientData.contracts.length > 0 
+                        ? "Cliente fidelizado con contrato activo. Oportunidad de Up-selling."
+                        : "Se requiere mayor interacción para análisis profundo.")
+                )}
+              </div>
             </div>
           </div>
 

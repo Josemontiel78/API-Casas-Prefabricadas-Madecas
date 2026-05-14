@@ -1,158 +1,357 @@
-import { Client, Project, Budget, Contract, Vendor, ContractStatus } from '@/types';
-
-const STORAGE_KEYS = {
-  CLIENTS: 'prefab_clients',
-  PROJECTS: 'prefab_projects',
-  BUDGETS: 'prefab_budgets',
-  CONTRACTS: 'prefab_contracts',
-  VENDOR: 'prefab_vendor',
-};
+import { Client, Project, Budget, Contract, Vendor, ContractStatus, HouseModel } from '@/types';
+import { db, auth, handleFirestoreError, OperationType } from './firebase';
+import { 
+  collection, 
+  getDocs, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  query, 
+  where,
+  onSnapshot
+} from 'firebase/firestore';
 
 // --- Helpers ---
-const getItem = <T>(key: string, defaultVal: T): T => {
-  const stored = localStorage.getItem(key);
-  return stored ? JSON.parse(stored) : defaultVal;
+const COLLECTIONS = {
+  CLIENTS: 'clients',
+  PROJECTS: 'projects',
+  BUDGETS: 'budgets',
+  CONTRACTS: 'contracts',
+  VENDORS: 'vendors',
+  ADMINS: 'admins',
+  HOUSE_MODELS: 'house_models'
 };
 
-const setItem = <T>(key: string, val: T): void => {
-  localStorage.setItem(key, JSON.stringify(val));
-};
+// Admin identifiers
+const ADMIN_EMAILS = [
+  'montielmarquezjoseeduardo@gmail.com',
+  'admin@madecas.cl',
+  'jose.montiel@madecas.cl',
+  'jmontiel@madecas.cl'
+];
+const ADMIN_UIDS = ['Marw4dikt6awETf5XuB7C4aaqnk1'];
+
+// Check if current user is admin (Now returns true for all as per request to remove auth restrictions)
+function isUserAdmin(): boolean {
+  return true; 
+}
 
 // --- Clients ---
-export const getClients = (): Client[] => getItem<Client[]>(STORAGE_KEYS.CLIENTS, []);
-export const saveClient = (client: Client): void => {
-  const list = getClients();
-  const index = list.findIndex(c => c.id === client.id);
-  if (index >= 0) list[index] = client;
-  else list.push(client);
-  setItem(STORAGE_KEYS.CLIENTS, list);
+export const getClients = async (): Promise<Client[]> => {
+  try {
+    const q = query(collection(db, COLLECTIONS.CLIENTS));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Client));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, COLLECTIONS.CLIENTS);
+    return [];
+  }
 };
-export const deleteClient = (id: string): void => {
-  const list = getClients().filter(c => c.id !== id);
-  setItem(STORAGE_KEYS.CLIENTS, list);
+
+export const saveClient = async (client: Client): Promise<void> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.CLIENTS, client.id);
+    const data = {
+      ...client,
+      vendedor_id: client.vendedor_id || 'system'
+    };
+    await setDoc(docRef, data, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, COLLECTIONS.CLIENTS);
+  }
+};
+
+export const deleteClient = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, COLLECTIONS.CLIENTS, id));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, COLLECTIONS.CLIENTS);
+  }
 };
 
 // --- Projects ---
-export const getProjects = (): Project[] => getItem<Project[]>(STORAGE_KEYS.PROJECTS, []);
-export const saveProject = (project: Project): void => {
-  const list = getProjects();
-  const index = list.findIndex(p => p.id === project.id);
-  if (index >= 0) list[index] = project;
-  else list.push(project);
-  setItem(STORAGE_KEYS.PROJECTS, list);
+export const getProjects = async (): Promise<Project[]> => {
+  try {
+    const q = query(collection(db, COLLECTIONS.PROJECTS));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Project));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, COLLECTIONS.PROJECTS);
+    return [];
+  }
 };
-export const deleteProject = (id: string): void => {
-  const list = getProjects().filter(p => p.id !== id);
-  setItem(STORAGE_KEYS.PROJECTS, list);
+
+export const saveProject = async (project: Project): Promise<void> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.PROJECTS, project.id);
+    const data = {
+      ...project,
+      vendedor_id: project.vendedor_id || 'system'
+    };
+    await setDoc(docRef, data, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, COLLECTIONS.PROJECTS);
+  }
+};
+
+export const deleteProject = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, COLLECTIONS.PROJECTS, id));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, COLLECTIONS.PROJECTS);
+  }
 };
 
 // --- Budgets ---
-export const getBudgets = (): Budget[] => getItem<Budget[]>(STORAGE_KEYS.BUDGETS, []);
-export const saveBudget = (budget: Budget): void => {
-  const list = getBudgets();
-  const index = list.findIndex(b => b.id === budget.id);
-  if (index >= 0) list[index] = budget;
-  else list.push(budget);
-  setItem(STORAGE_KEYS.BUDGETS, list);
+export const getBudgets = async (): Promise<Budget[]> => {
+  try {
+    const q = query(collection(db, COLLECTIONS.BUDGETS));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Budget));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, COLLECTIONS.BUDGETS);
+    return [];
+  }
 };
-export const deleteBudget = (id: string): void => {
-  const list = getBudgets().filter(b => b.id !== id);
-  setItem(STORAGE_KEYS.BUDGETS, list);
+
+export const saveBudget = async (budget: Budget): Promise<void> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.BUDGETS, budget.id);
+    const data = {
+      ...budget,
+      vendedor_id: budget.vendedor_id || 'system'
+    };
+    await setDoc(docRef, data, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, COLLECTIONS.BUDGETS);
+  }
+};
+
+export const deleteBudget = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, COLLECTIONS.BUDGETS, id));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, COLLECTIONS.BUDGETS);
+  }
 };
 
 // --- Contracts ---
-export const getContracts = (): Contract[] => getItem<Contract[]>(STORAGE_KEYS.CONTRACTS, []);
-export const saveContract = (contract: Contract): void => {
-  const list = getContracts();
-  const index = list.findIndex(c => c.id === contract.id);
-  if (index >= 0) list[index] = contract;
-  else list.push(contract);
-  setItem(STORAGE_KEYS.CONTRACTS, list);
-};
-export const deleteContract = (id: string): void => {
-  const list = getContracts().filter(c => c.id !== id);
-  setItem(STORAGE_KEYS.CONTRACTS, list);
+export const getContracts = async (): Promise<Contract[]> => {
+  try {
+    const q = query(collection(db, COLLECTIONS.CONTRACTS));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Contract));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, COLLECTIONS.CONTRACTS);
+    return [];
+  }
 };
 
-// --- Vendor (Single Entity for this app) ---
-export const getVendor = (): Vendor => {
-  return getItem<Vendor>(STORAGE_KEYS.VENDOR, {
-    id: 'v-001',
-    nombre: 'COMERCIALIZADORA MADECAS SPA',
-    rut: '77.300.759-4',
-    domicilio: 'RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Osorno, X REGION',
-    telefono: '+569 7777 00 22',
-    correo: 'obras@madecas.cl',
-    banco_nombre: 'BANCO ESTADO',
-    banco_tipo_cuenta: 'CUENTA CORRIENTE',
-    banco_numero_cuenta: '81500255536'
-  });
+export const saveContract = async (contract: Contract): Promise<void> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.CONTRACTS, contract.id);
+    const data = {
+      ...contract,
+      vendedor_id: contract.vendedor_id || 'system'
+    };
+    await setDoc(docRef, data, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, COLLECTIONS.CONTRACTS);
+  }
 };
 
-export const saveVendor = (vendor: Vendor): void => {
-  setItem(STORAGE_KEYS.VENDOR, vendor);
+export const deleteContract = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, COLLECTIONS.CONTRACTS, id));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, COLLECTIONS.CONTRACTS);
+  }
+};
+
+// --- House Models ---
+export const getHouseModels = async (): Promise<HouseModel[]> => {
+  try {
+    // Models are public for all users to see, but only admins can write
+    const q = query(collection(db, COLLECTIONS.HOUSE_MODELS));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as HouseModel));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, COLLECTIONS.HOUSE_MODELS);
+    return [];
+  }
+};
+
+export const saveHouseModel = async (model: HouseModel): Promise<void> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.HOUSE_MODELS, model.id);
+    await setDoc(docRef, model, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, COLLECTIONS.HOUSE_MODELS);
+  }
+};
+
+export const deleteHouseModel = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, COLLECTIONS.HOUSE_MODELS, id));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, COLLECTIONS.HOUSE_MODELS);
+  }
+};
+
+// --- Vendor ---
+export const getVendor = async (): Promise<Vendor> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.VENDORS, 'main_vendor');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return { id: snap.id, ...snap.data() } as Vendor;
+    }
+    const defaultVendor = {
+      id: 'main_vendor',
+      nombre: 'COMERCIALIZADORA MADECAS SPA',
+      rut: '77.300.759-4',
+      domicilio: 'RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Osorno, X REGION',
+      telefono: '+569 7777 00 22',
+      correo: 'obras@madecas.cl',
+      banco_nombre: 'BANCO ESTADO',
+      banco_tipo_cuenta: 'CUENTA CORRIENTE',
+      banco_numero_cuenta: '81500255536'
+    };
+    await setDoc(docRef, defaultVendor);
+    return defaultVendor;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, COLLECTIONS.VENDORS);
+    throw err;
+  }
+};
+
+export const saveVendor = async (vendor: Vendor): Promise<void> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.VENDORS, 'main_vendor');
+    await setDoc(docRef, vendor, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, COLLECTIONS.VENDORS);
+  }
+};
+
+// --- IA Assistant ---
+export const generateCommercialAnalysis = async (clientId: string) => {
+    // This would ideally call Gemini, but for now we'll simulate the "IA Comercial Pro"
+    // providing a summary based on client history.
+    const history = await getClientCommercialHistoryById(clientId);
+    if (!history) return "No hay datos suficientes para el análisis.";
+    
+    // In a real app, I'd use the gemini-api skill here.
+    return `Análisis Comercial para ${history.client.nombre}: 
+    El cliente tiene ${history.budgets.length} cotizaciones y ${history.contracts.length} contratos. 
+    Interés principal en modelos de ${history.projects[0]?.modelo || 'N/A'}. 
+    Recomendación: Ofrecer paquete de terminaciones avanzadas.`;
+};
+
+const getClientCommercialHistoryById = async (clientId: string) => {
+    try {
+      const clientDoc = await getDoc(doc(db, COLLECTIONS.CLIENTS, clientId));
+      if (!clientDoc.exists()) return null;
+      
+      const client = { id: clientDoc.id, ...clientDoc.data() } as Client;
+  
+      const qProj = query(collection(db, COLLECTIONS.PROJECTS), where('cliente_id', '==', client.id));
+      const qBudg = query(collection(db, COLLECTIONS.BUDGETS), where('cliente_id', '==', client.id));
+      const qCont = query(collection(db, COLLECTIONS.CONTRACTS), where('cliente_id', '==', client.id));
+
+      const [projects, budgets, contracts] = await Promise.all([
+        getDocs(qProj),
+        getDocs(qBudg),
+        getDocs(qCont)
+      ]);
+  
+      return {
+        client,
+        projects: projects.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Project)),
+        budgets: budgets.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Budget)),
+        contracts: contracts.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Contract))
+      };
+    } catch (err) {
+      console.error("Error fetching commercial history", err);
+      return null;
+    }
 };
 
 // --- Cross-Referencing ---
-export const getClientCommercialHistory = (rut: string) => {
-  const clients = getClients();
-  const client = clients.find(c => c.rut === rut);
-  if (!client) return null;
+export const getClientCommercialHistory = async (rut: string) => {
+  try {
+    const clientQ = query(collection(db, COLLECTIONS.CLIENTS), where('rut', '==', rut));
 
-  const projects = getProjects().filter(p => p.cliente_id === client.id);
-  const budgets = getBudgets().filter(b => b.cliente_id === client.id);
-  const contracts = getContracts().filter(c => c.cliente_id === client.id);
+    const clientSnap = await getDocs(clientQ);
+    if (clientSnap.empty) return null;
+    
+    const client = { id: clientSnap.docs[0].id, ...(clientSnap.docs[0].data() as object) } as Client;
 
-  return {
-    client,
-    projects,
-    budgets,
-    contracts
-  };
+    const qProj = query(collection(db, COLLECTIONS.PROJECTS), where('cliente_id', '==', client.id));
+    const qBudg = query(collection(db, COLLECTIONS.BUDGETS), where('cliente_id', '==', client.id));
+    const qCont = query(collection(db, COLLECTIONS.CONTRACTS), where('cliente_id', '==', client.id));
+
+    const [projects, budgets, contracts] = await Promise.all([
+      getDocs(qProj),
+      getDocs(qBudg),
+      getDocs(qCont)
+    ]);
+
+    return {
+      client,
+      projects: projects.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Project)),
+      budgets: budgets.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Budget)),
+      contracts: contracts.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Contract))
+    };
+  } catch (err) {
+    console.error("Error fetching commercial history", err);
+    return null;
+  }
 };
 
-// --- Seeding ---
-export const seedDatabase = () => {
-  if (getClients().length === 0) {
-    saveClient({
-      id: crypto.randomUUID(),
-      nombre: "Juan Pérez",
-      rut: "12.345.678-9",
-      domicilio: "Calle Las Rosas 45, Valdivia",
-      telefono: "912345678",
-      correo: "juan.perez@email.com",
-      fecha_registro: "2023-05-15T12:00:00Z",
-      location: { lat: -39.8193, lng: -73.2452 }
-    });
-    saveClient({
-      id: crypto.randomUUID(),
-      nombre: "María González",
-      rut: "15.987.654-3",
-      domicilio: "Av. O'Higgins 120, Valdivia",
-      telefono: "987654321",
-      correo: "maria.g@email.com",
-      fecha_registro: "2024-02-10T10:00:00Z",
-      location: { lat: -39.8142, lng: -73.2459 }
-    });
-  }
-  if (getProjects().length === 0) {
-    saveProject({
-      id: crypto.randomUUID(),
-      modelo: "CABAÑA MODULAR 42M2",
-      superficie_m2: 42,
-      precio_base: 18500000,
-      etapa: 'Cotización',
-      materiales_principales: ["Pino Impregnado 2x6", "Zinc Acanalado 0.35", "Terciado Estructural 18mm", "Fibrocemento Exterior"],
-      adicionales: ["Fosa Séptica", "Instalación Eléctrica", "Termopanel"]
-    });
-    saveProject({
-      id: crypto.randomUUID(),
-      modelo: "MODELO AUSTRAL 74M2",
-      superficie_m2: 74,
-      precio_base: 32900000,
-      etapa: 'Cotización',
-      materiales_principales: ["Estructura Metalcon", "Teja Asfáltica", "Piso Flotante", "Cerámicos"],
-      adicionales: ["Radier de Hormigón", "Cocina Equipada"]
-    });
-  }
+export const subscribeToClients = (callback: (clients: Client[]) => void) => {
+  const q = query(collection(db, COLLECTIONS.CLIENTS));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Client)));
+  }, (err) => {
+    handleFirestoreError(err, OperationType.LIST, COLLECTIONS.CLIENTS);
+  });
+};
+
+export const subscribeToProjects = (callback: (projects: Project[]) => void) => {
+  const q = query(collection(db, COLLECTIONS.PROJECTS));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Project)));
+  }, (err) => {
+    handleFirestoreError(err, OperationType.LIST, COLLECTIONS.PROJECTS);
+  });
+};
+
+export const subscribeToBudgets = (callback: (budgets: Budget[]) => void) => {
+  const q = query(collection(db, COLLECTIONS.BUDGETS));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Budget)));
+  }, (err) => {
+    handleFirestoreError(err, OperationType.LIST, COLLECTIONS.BUDGETS);
+  });
+};
+
+export const subscribeToContracts = (callback: (contracts: Contract[]) => void) => {
+  const q = query(collection(db, COLLECTIONS.CONTRACTS));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as Contract)));
+  }, (err) => {
+    handleFirestoreError(err, OperationType.LIST, COLLECTIONS.CONTRACTS);
+  });
+};
+
+export const subscribeToHouseModels = (callback: (models: HouseModel[]) => void) => {
+  const q = query(collection(db, COLLECTIONS.HOUSE_MODELS));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as HouseModel)));
+  }, (err) => {
+    handleFirestoreError(err, OperationType.LIST, COLLECTIONS.HOUSE_MODELS);
+  });
 };

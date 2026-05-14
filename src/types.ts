@@ -3,6 +3,7 @@ export enum ContractStatus {
   DRAFT = 'Borrador',
   GENERATED = 'Generado',
   SIGNED = 'Firmado',
+  COMPLETED = 'Finalizado',
   CANCELLED = 'Anulado'
 }
 
@@ -14,6 +15,7 @@ export interface Client {
   telefono: string;
   correo: string;
   fecha_registro?: string; // Standardized ISO date
+  vendedor_id?: string; // Linked seller UID
   location?: {
     lat: number;
     lng: number;
@@ -42,6 +44,7 @@ export interface Material {
 export interface Project {
   id: string;
   cliente_id?: string; // Linked client RUT reference
+  vendedor_id?: string; // Linked seller UID
   modelo: string;
   superficie_m2: number;
   precio_base: number;
@@ -53,6 +56,11 @@ export interface Project {
     lat: number;
     lng: number;
   };
+  // New Fields for Catalog
+  imagen_url?: string;
+  pdf_url?: string;
+  es_modelo_fijo?: boolean;
+  partidas_adicionales_permitidas?: boolean;
 }
 
 export interface BudgetItem {
@@ -67,6 +75,7 @@ export interface BudgetItem {
 export interface Budget {
   id: string;
   cliente_id: string;
+  vendedor_id: string;
   proyecto_id: string;
   fecha: string;
   detalle_items: BudgetItem[];
@@ -79,12 +88,16 @@ export interface Budget {
   lugar_suscripcion?: string;
   superficie_m2?: number;
   medidas_radier?: { largo: number; ancho: number };
+  es_modelo_fijo?: boolean;
+  partidas_adicionales_permitidas?: boolean;
 }
 
 export interface PaymentInstallment {
   descripcion: string; // e.g., "Al firmar contrato"
   porcentaje: number;
   monto: number;
+  pagado?: boolean;
+  fecha_pago?: string;
 }
 
 export interface Contract {
@@ -99,6 +112,7 @@ export interface Contract {
   cuotas_pago: number;
   estado_pago: 'Pendiente' | 'Parcial' | 'Pagado';
   hitos_pago: PaymentInstallment[];
+  pautas_pago: PaymentInstallment[]; // Ensuring this is present for ContractManager
   estado: ContractStatus;
   contenido_texto: string; // The AI generated text
 
@@ -130,6 +144,28 @@ export interface AppNotification {
   type: 'success' | 'error' | 'info';
 }
 
+export interface AppTheme {
+  background: string;
+  text: string;
+  card: string;
+  menu: string;
+  button: string;
+  name: string;
+}
+
+export interface HouseModel {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  superficie_m2: number;
+  preciobase: number;
+  imagen_url?: string;
+  pdf_url?: string;
+  especificaciones?: BudgetItem[];
+  vendedor_id?: string;
+  fecha_creacion: string;
+}
+
 // Helper type for views
-export type ViewState = 'dashboard' | 'hub' | 'map' | 'clients' | 'projects' | 'budgets' | 'contracts' | 'settings' | 'ai-assistant';
+export type ViewState = 'dashboard' | 'hub' | 'map' | 'clients' | 'projects' | 'budgets' | 'contracts' | 'settings' | 'ai-assistant' | 'cubicacion' | 'designs';
 export type UserRole = 'vendedor' | 'admin';

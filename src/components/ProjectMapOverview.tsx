@@ -3,8 +3,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getClients } from '@/services/db';
-import { Client } from '@/types';
+import { getClients, getContracts } from '@/services/db';
+import { Client, Contract } from '@/types';
 import { Users, MapPin, ExternalLink, Home, Phone, Target, Navigation, Search, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -30,18 +30,31 @@ const createCustomIcon = (color: string) => {
   });
 };
 
-const DefaultIcon = createCustomIcon('#4f46e5');
+const DefaultIcon = createCustomIcon('#4f46e5'); // Indigo for prospects
+const ContractIcon = createCustomIcon('#d946ef'); // Fuchsia for contracts
 
 const ProjectMapOverview: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>('Todos');
   const [userLocation, setUserLocation] = useState<L.LatLngExpression | null>(null);
   const [isLocating, setIsLocating] = useState(false);
 
   useEffect(() => {
-    const allClients = getClients().filter(c => c.location);
-    setClients(allClients);
+    const loadData = async () => {
+        try {
+            const [allClients, allContracts] = await Promise.all([
+                getClients(),
+                getContracts()
+            ]);
+            setClients(allClients.filter(c => c.location));
+            setContracts(allContracts);
+        } catch (error) {
+            console.error("Error loading map data:", error);
+        }
+    };
+    loadData();
   }, []);
 
   const findMyLocation = () => {
@@ -65,6 +78,36 @@ const ProjectMapOverview: React.FC = () => {
     );
   };
 
+  const handleAddressSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery) return;
+    
+    // Check if searching for a client first
+    const client = clients.find(c => c.nombre.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (client && client.location) {
+        setUserLocation([client.location.lat, client.location.lng]);
+        return;
+    }
+
+    // Otherwise, use Nominatim for geocoding
+    setIsLocating(true);
+    try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery + ', Chile')}`);
+        const data = await response.json();
+        if (data && data.length > 0) {
+            setUserLocation([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
+        } else {
+            window.dispatchEvent(new CustomEvent('app-notification', { 
+                detail: { message: 'No se encontró la dirección o sector mencionado.', type: 'info' } 
+            }));
+        }
+    } catch (err) {
+        console.error("Geocoding error", err);
+    } finally {
+        setIsLocating(false);
+    }
+  };
+
   const years = useMemo(() => {
     const allYears = clients.map(c => new Date(c.fecha_registro || Date.now()).getFullYear().toString());
     return ['Todos', ...Array.from(new Set(allYears)).sort().reverse()];
@@ -81,8 +124,8 @@ const ProjectMapOverview: React.FC = () => {
     <div className="space-y-6 h-full flex flex-col pb-12">
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Monitor Geográfico</h2>
-          <p className="text-slate-500 text-sm font-medium">Ubicación de clientes y proyectos activos</p>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Georeferencia Global</h2>
+          <p className="text-slate-500 text-sm font-medium">Control territorial de clientes y obras regionales.</p>
         </div>
         
         <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
@@ -96,16 +139,16 @@ const ProjectMapOverview: React.FC = () => {
             ))}
           </select>
 
-          <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200 w-full md:w-80">
+          <form onSubmit={handleAddressSearch} className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200 w-full md:w-80">
             <Search className="text-slate-400 w-5 h-5 ml-2" />
             <input 
               type="text" 
-              placeholder="Buscar cliente..."
+              placeholder="Buscar dirección, sector o cliente..."
               className="bg-transparent border-none outline-none text-sm w-full py-1"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-          </div>
+          </form>
         </div>
       </div>
 
@@ -132,15 +175,19 @@ const ProjectMapOverview: React.FC = () => {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           
-          {filteredClients.map(client => (
-            client.location && (
+          {filteredClients.map(client => {
+            const hasContract = contracts.some(con => con.cliente_id === client.id);
+            return client.location && (
               <Marker 
                 key={client.id} 
                 position={[client.location.lat, client.location.lng]}
-                icon={DefaultIcon}
+                icon={hasContract ? ContractIcon : DefaultIcon}
               >
                 <Tooltip direction="top" offset={[0, -24]} opacity={1}>
-                  <span className="font-bold text-slate-800 text-xs">{client.nombre}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-800 text-xs">{client.nombre}</span>
+                    {hasContract && <span className="bg-fuchsia-100 text-fuchsia-600 text-[10px] px-1 rounded border border-fuchsia-200">OBRA</span>}
+                  </div>
                 </Tooltip>
                 <Popup className="custom-popup" minWidth={240}>
                   <div className="p-2">
@@ -166,7 +213,13 @@ const ProjectMapOverview: React.FC = () => {
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
-                       <button className="py-2 bg-slate-900 text-white text-[10px] font-bold rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2">
+                       <button 
+                         onClick={() => {
+                             window.localStorage.setItem('hub_selected_client_rut', client.rut);
+                             window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'hub' }));
+                         }}
+                         className="py-2 bg-slate-900 text-white text-[10px] font-bold rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                       >
                          PROYECTO <ExternalLink size={12} />
                        </button>
                        <button className="py-2 bg-white text-slate-900 border border-slate-200 text-[10px] font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center justify-center gap-2">
@@ -176,8 +229,8 @@ const ProjectMapOverview: React.FC = () => {
                   </div>
                 </Popup>
               </Marker>
-            )
-          ))}
+            );
+          })}
         </MapContainer>
       </div>
 

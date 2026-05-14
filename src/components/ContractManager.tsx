@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Contract, Budget, Client, Project, Vendor, ContractStatus, PaymentInstallment } from '@/types';
-import { getContracts, saveContract, getBudgets, getClients, getProjects, getVendor, deleteContract } from '@/services/db';
-import { generateContractText } from '@/services/geminiService';
-import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, Edit3, Eye, FileType, Trash2, Maximize2, AlertCircle, Calculator, ArrowRight, Upload, Image as ImageIcon } from 'lucide-react';
+import { getContracts, saveContract, getBudgets, getClients, getProjects, getVendor, deleteContract, subscribeToContracts, subscribeToBudgets, subscribeToClients, subscribeToProjects } from '@/services/db';
+import { generateContractText } from '@/services/gemini';
+import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, Edit3, Eye, FileType, Trash2, Maximize2, AlertCircle, Calculator, ArrowRight, Upload, Image as ImageIcon, DollarSign } from 'lucide-react';
 
 // Input assets provided by the user
 const getSafeInputFile = (name: string): string => {
@@ -14,33 +14,7 @@ const getSafeInputFile = (name: string): string => {
   }
 };
 
-// --- MADECAS LOGO SVG ---
-const MADECAS_LOGO_SVG = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="w-full h-full">
-  <circle cx="50" cy="50" r="48" fill="none" stroke="#143e18" stroke-width="1" opacity="0.2"/>
-  <text x="50" y="52" font-family="Times New Roman, serif" font-size="12" font-weight="bold" fill="#143e18" text-anchor="middle" letter-spacing="1" opacity="0.3">MADECAS</text>
-</svg>
-`;
-
-const MADECAS_LOGO_HEADER_SVG = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 140">
-  <circle cx="200" cy="50" r="45" fill="#fff" stroke="#143e18" stroke-width="2" />
-  <text x="200" y="55" font-family="Times New Roman, serif" font-size="16" font-weight="bold" fill="#143e18" text-anchor="middle">MADECAS</text>
-  <text x="200" y="85" font-family="Arial, sans-serif" font-size="6" fill="#143e18" text-anchor="middle">PREFABRICADOS</text>
-  
-  <text x="200" y="125" font-family="Times New Roman, serif" font-size="16" font-weight="bold" fill="#143e18" text-anchor="middle" letter-spacing="1">CONTRATO DE COMPRAVENTA</text>
-  <rect x="100" y="132" width="200" height="1" fill="#143e18" />
-</svg>
-`;
-
-const MADECAS_FOOTER_SVG = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 60" preserveAspectRatio="none">
-  <rect x="0" y="0" width="800" height="60" fill="#143e18" />
-  <path d="M0 0 L800 0 L800 5 L0 5 Z" fill="#1b5e20" />
-  <text x="400" y="32" font-family="Arial, sans-serif" font-size="20" font-weight="900" fill="#fff" text-anchor="middle" letter-spacing="4">MADECAS</text>
-  <text x="400" y="48" font-family="Arial, sans-serif" font-size="8" font-weight="400" fill="#fff" text-anchor="middle" letter-spacing="6" text-transform="uppercase">CALIDAD Y CONFIANZA EN SU HOGAR</text>
-</svg>
-`;
+import { MADECAS_LOGO_SVG, MADECAS_LOGO_HEADER_SVG, MADECAS_FOOTER_SVG } from '@/constants/assets';
 
 const ContractManager: React.FC = () => {
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -69,6 +43,7 @@ const ContractManager: React.FC = () => {
   const [generatedText, setGeneratedText] = useState('');
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('preview');
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
+  const [expandedPaymentsContractId, setExpandedPaymentsContractId] = useState<string | null>(null);
   const [parentContractId, setParentContractId] = useState<string | null>(null);
   const [isAnexo, setIsAnexo] = useState(false);
   const [m2Warning, setM2Warning] = useState<string | null>(null);
@@ -102,18 +77,29 @@ const ContractManager: React.FC = () => {
   }, [selectedProject, selectedBudget]);
 
   useEffect(() => {
-    setContracts(getContracts());
-    setBudgets(getBudgets());
-    setClients(getClients());
-    setProjects(getProjects());
-    setVendor(getVendor());
+    const unsubContracts = subscribeToContracts((data) => setContracts(data));
+    const unsubBudgets = subscribeToBudgets((data) => setBudgets(data));
+    const unsubClients = subscribeToClients((data) => setClients(data));
+    const unsubProjects = subscribeToProjects((data) => setProjects(data));
+    
+    getVendor().then(setVendor);
 
-    // Check for pending contract from budget
-    const pendingBudgetId = window.localStorage.getItem('pending_contract_budget_id');
-    if (pendingBudgetId) {
-        window.localStorage.removeItem('pending_contract_budget_id');
-        setSelectedBudgetId(pendingBudgetId);
-    }
+    const timer = setTimeout(() => {
+        // Check for pending contract from budget
+        const pendingBudgetId = window.localStorage.getItem('pending_contract_budget_id');
+        if (pendingBudgetId) {
+            window.localStorage.removeItem('pending_contract_budget_id');
+            setSelectedBudgetId(pendingBudgetId);
+        }
+    }, 1000);
+
+    return () => {
+        unsubContracts();
+        unsubBudgets();
+        unsubClients();
+        unsubProjects();
+        clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -135,6 +121,27 @@ const ContractManager: React.FC = () => {
   const totalAmount = payments.reduce((sum, p) => sum + p.monto, 0);
   const budgetAmount = selectedBudget ? selectedBudget.monto_total : 0;
   const isTotalValid = Math.abs(totalPercentage - 100) < 0.1; // Float tolerance
+
+  const togglePaymentStatus = async (contract: Contract, paymentIdx: number) => {
+    const updatedPayments = [...contract.pautas_pago];
+    updatedPayments[paymentIdx] = {
+        ...updatedPayments[paymentIdx],
+        pagado: !updatedPayments[paymentIdx].pagado,
+        fecha_pago: !updatedPayments[paymentIdx].pagado ? new Date().toISOString() : undefined
+    };
+
+    const updatedContract = { ...contract, pautas_pago: updatedPayments };
+    
+    // Check if fully paid
+    const allPaid = updatedPayments.every(p => p.pagado);
+    if (allPaid) {
+        updatedContract.estado = ContractStatus.COMPLETED;
+    } else if (contract.estado === ContractStatus.COMPLETED) {
+        updatedContract.estado = ContractStatus.SIGNED;
+    }
+
+    await saveContract(updatedContract);
+  };
 
   const handleGenerate = async () => {
     if (!selectedClient || !selectedProject || !selectedBudget || !vendor) return;
@@ -208,7 +215,7 @@ const ContractManager: React.FC = () => {
     }
   };
 
-  const handleFinalize = () => {
+  const handleFinalize = async () => {
     if (!selectedClient || !selectedProject || !selectedBudget || !vendor) return;
     
     const deliveryDate = new Date(startDate);
@@ -232,6 +239,7 @@ const ContractManager: React.FC = () => {
       cuotas_pago: payments.length,
       estado_pago: 'Pendiente',
       hitos_pago: payments,
+      pautas_pago: payments.map(p => ({ ...p, pagado: false })),
       estado: ContractStatus.GENERATED,
       contenido_texto: generatedText,
       
@@ -248,8 +256,7 @@ const ContractManager: React.FC = () => {
       parent_contract_id: parentContractId || undefined
     };
 
-    saveContract(contractData);
-    setContracts(getContracts());
+    await saveContract(contractData);
     setIsCreating(false);
     setEditingContractId(null);
     setParentContractId(null);
@@ -263,10 +270,9 @@ const ContractManager: React.FC = () => {
     }));
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
       if(window.confirm("¿Está seguro de eliminar este contrato? Esta acción no se puede deshacer.")) {
-          deleteContract(id);
-          setContracts(getContracts());
+          await deleteContract(id);
           window.dispatchEvent(new CustomEvent('app-notification', { 
             detail: { message: 'Contrato eliminado', type: 'info' } 
           }));
@@ -404,7 +410,7 @@ const ContractManager: React.FC = () => {
     setTimeout(clearCanvas, 100); 
   };
 
-  const saveSignature = () => {
+  const saveSignature = async () => {
     if (!signingContract || !signerRole || !canvasRef.current) return;
     const signatureData = canvasRef.current.toDataURL('image/png');
     const updatedContract = { ...signingContract };
@@ -415,8 +421,7 @@ const ContractManager: React.FC = () => {
       updatedContract.estado = ContractStatus.SIGNED;
       updatedContract.fecha_firma = new Date().toISOString();
     }
-    saveContract(updatedContract);
-    setContracts(getContracts());
+    await saveContract(updatedContract);
     setSigningContract(null);
     setSignerRole(null);
     window.dispatchEvent(new CustomEvent('app-notification', { 
@@ -429,7 +434,7 @@ const ContractManager: React.FC = () => {
     if (!file || !activeContractForUpload) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const base64 = event.target?.result as string;
       const contract = contracts.find(c => c.id === activeContractForUpload);
       if (contract) {
@@ -439,8 +444,7 @@ const ContractManager: React.FC = () => {
           documento_archivo_tipo: file.type.includes('pdf') ? 'PDF' : 'PHOTO' as any,
           fecha_escaneo: new Date().toISOString()
         };
-        saveContract(updatedContract);
-        setContracts(getContracts());
+        await saveContract(updatedContract);
         window.dispatchEvent(new CustomEvent('app-notification', { 
             detail: { message: 'Documento cargado correctamente', type: 'success' } 
         }));
@@ -582,7 +586,7 @@ const ContractManager: React.FC = () => {
                     top: 0; left: 0;
                     width: 100%; height: 100%;
                     object-fit: cover;
-                    opacity: 0.16; /* 20% softer than 0.2 for better text readability */
+                    opacity: 0.12; /* 20% softer than 0.16 for better text readability */
                     filter: saturate(0.5) brightness(1.1);
                     z-index: -20;
                 }
@@ -1004,7 +1008,7 @@ const ContractManager: React.FC = () => {
                       onClick={() => window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }))}
                       className="px-5 py-2.5 bg-slate-800 text-white rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-slate-900 transition shadow-lg shadow-slate-200"
                     >
-                        Ir a Análisis de Costos <ArrowRight size={18} />
+                        Ir a Presupuestos <ArrowRight size={18} />
                     </button>
                   </div>
                 )}
@@ -1024,7 +1028,7 @@ const ContractManager: React.FC = () => {
                             <img 
                                 src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&q=80&w=2000" 
                                 className="paper-bg-image" 
-                                style={{ opacity: 0.16, filter: 'saturate(0.5) brightness(1.1)' }}
+                                style={{ opacity: 0.12, filter: 'saturate(0.5) brightness(1.1)' }}
                                 alt="Background"
                                 onError={(e) => (e.currentTarget.style.display = 'none')}
                             />
@@ -1126,8 +1130,8 @@ const ContractManager: React.FC = () => {
 
       <div className="flex justify-between items-center gap-4">
         <div>
-            <h3 className="text-2xl font-bold text-slate-800">Contratos Legales</h3>
-            <p className="text-slate-500 text-sm">Documentos generados y firmados.</p>
+            <h3 className="text-2xl font-bold text-slate-800">Contratos y Pagos</h3>
+            <p className="text-slate-500 text-sm">Registro de documentos legales y gestión de cuotas.</p>
         </div>
         <button onClick={() => setIsCreating(true)} className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl flex items-center gap-2 hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition font-medium">
           <Plus size={20} /> Nuevo Contrato
@@ -1171,9 +1175,7 @@ const ContractManager: React.FC = () => {
                                 <span className="font-semibold text-slate-700">{cli?.nombre || 'Desconocido'}</span> • Emitido el {contract.fecha_contrato}
                             </p>
                         </div>
-                    </div>
-                    
-                    <div className="flex flex-wrap items-center gap-4 w-full md:w-auto justify-end">
+                          <div className="flex flex-wrap items-center gap-4 w-full md:w-auto justify-end">
                         {!isSigned && (
                           <div className="flex gap-2">
                              {!contract.firma_cliente && (
@@ -1188,7 +1190,7 @@ const ContractManager: React.FC = () => {
                                <button 
                                  onClick={() => openSigningModal(contract, 'vendedor')}
                                  className="px-3 py-1.5 text-xs font-bold bg-purple-50 text-purple-700 rounded-lg border border-purple-100 hover:bg-purple-100 flex items-center gap-1.5 transition"
-                               >
+                                >
                                  <PenTool size={12} /> FIRMA VENDEDOR
                                </button>
                              )}
@@ -1245,6 +1247,14 @@ const ContractManager: React.FC = () => {
                                 </button>
                             )}
                             <button 
+                                onClick={() => setExpandedPaymentsContractId(expandedPaymentsContractId === contract.id ? null : contract.id)}
+                                className={`p-2.5 rounded-xl transition flex items-center gap-1.5 ${expandedPaymentsContractId === contract.id ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
+                                title="Gestionar Pagos"
+                            >
+                                <DollarSign size={20} />
+                                <span className="text-[10px] font-bold uppercase tracking-tight">Pagos</span>
+                            </button>
+                            <button 
                             className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition"
                             onClick={() => handleEditSavedContract(contract)}
                             title="Previsualizar / Editar Borrador"
@@ -1267,6 +1277,52 @@ const ContractManager: React.FC = () => {
                             </button>
                         </div>
                     </div>
+                </div>
+
+                    {/* Expanded Payment Management Section */}
+                    {expandedPaymentsContractId === contract.id && (
+                        <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in slide-in-from-top-2 duration-300">
+                            <div className="col-span-full mb-2">
+                                <h5 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                    <DollarSign size={14} /> Gestión de Cuotas y Cierre de Pagos
+                                </h5>
+                            </div>
+                            {contract.pautas_pago.map((pauta, pIdx) => (
+                                <div 
+                                    key={pIdx} 
+                                    className={`p-3 rounded-xl border transition-all flex flex-col justify-between h-full ${
+                                        pauta.pagado ? 'bg-emerald-50 border-emerald-200 shadow-inner' : 'bg-slate-50 border-slate-200'
+                                    }`}
+                                >
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase truncate" title={pauta.descripcion}>{pauta.descripcion}</p>
+                                        <p className={`font-black text-lg ${pauta.pagado ? 'text-emerald-700' : 'text-slate-700'}`}>
+                                            ${pauta.monto.toLocaleString()}
+                                        </p>
+                                    </div>
+                                    <button 
+                                        onClick={() => togglePaymentStatus(contract, pIdx)}
+                                        className={`mt-3 w-full py-2 rounded-lg font-bold text-[10px] uppercase flex items-center justify-center gap-2 transition ${
+                                            pauta.pagado 
+                                            ? 'bg-emerald-600 text-white shadow-md' 
+                                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        {pauta.pagado ? (
+                                            <><CheckCircle size={12} /> PAGADO</>
+                                        ) : (
+                                            "MARCAR PAGADO"
+                                        )}
+                                    </button>
+                                    {pauta.pagado && pauta.fecha_pago && (
+                                        <p className="text-[9px] text-emerald-400 font-bold mt-1 text-center italic">
+                                            {new Date(pauta.fecha_pago).toLocaleDateString()}
+                                        </p>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             );
         })}
