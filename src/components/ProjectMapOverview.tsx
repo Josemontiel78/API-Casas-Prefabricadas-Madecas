@@ -36,6 +36,7 @@ const ContractIcon = createCustomIcon('#d946ef'); // Fuchsia for contracts
 const ProjectMapOverview: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [budgets, setBudgets] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>('Todos');
   const [userLocation, setUserLocation] = useState<L.LatLngExpression | null>(null);
@@ -44,12 +45,16 @@ const ProjectMapOverview: React.FC = () => {
   useEffect(() => {
     const loadData = async () => {
         try {
-            const [allClients, allContracts] = await Promise.all([
+            // Lazy import to avoid circular or heavy load
+            const { getBudgets } = await import('@/services/db');
+            const [allClients, allContracts, allBudgets] = await Promise.all([
                 getClients(),
-                getContracts()
+                getContracts(),
+                getBudgets()
             ]);
             setClients(allClients.filter(c => c.location));
             setContracts(allContracts);
+            setBudgets(allBudgets);
         } catch (error) {
             console.error("Error loading map data:", error);
         }
@@ -176,7 +181,21 @@ const ProjectMapOverview: React.FC = () => {
           />
           
           {filteredClients.map(client => {
-            const hasContract = contracts.some(con => con.cliente_id === client.id);
+            const clientContracts = contracts.filter(con => con.cliente_id === client.id);
+            const clientBudgets = budgets.filter(b => b.cliente_id === client.id).sort((a, b) => 
+               new Date(b.fecha_registro || 0).getTime() - new Date(a.fecha_registro || 0).getTime()
+            );
+            
+            const latestBudget = clientBudgets[0];
+            const hasContract = clientContracts.length > 0;
+            
+            let modelDisplayName = latestBudget?.modelo_vivienda || 'Sin Modelo';
+            if (modelDisplayName.toLowerCase().includes('personal')) {
+                modelDisplayName = `Presupuesto Personalizado (${latestBudget?.superficie_m2 || '0'} m²)`;
+            } else if (latestBudget?.superficie_m2) {
+                modelDisplayName += ` (${latestBudget.superficie_m2} m²)`;
+            }
+
             return client.location && (
               <Marker 
                 key={client.id} 
@@ -184,20 +203,22 @@ const ProjectMapOverview: React.FC = () => {
                 icon={hasContract ? ContractIcon : DefaultIcon}
               >
                 <Tooltip direction="top" offset={[0, -24]} opacity={1}>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-0.5">
                     <span className="font-bold text-slate-800 text-xs">{client.nombre}</span>
-                    {hasContract && <span className="bg-fuchsia-100 text-fuchsia-600 text-[10px] px-1 rounded border border-fuchsia-200">OBRA</span>}
+                    <span className="text-[10px] text-slate-500 font-medium">
+                        {hasContract ? 'OBRA: ' : 'INTERÉS: '} {modelDisplayName}
+                    </span>
                   </div>
                 </Tooltip>
-                <Popup className="custom-popup" minWidth={240}>
+                <Popup className="custom-popup" minWidth={260}>
                   <div className="p-2">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center font-black text-sm">
                         {client.nombre.charAt(0)}
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <p className="font-black text-slate-800 text-sm leading-tight">{client.nombre}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">ID: {client.rut}</p>
+                        <p className="text-[10px] text-indigo-600 font-bold mt-0.5 uppercase tracking-wider">{modelDisplayName}</p>
                       </div>
                     </div>
                     
@@ -209,6 +230,12 @@ const ProjectMapOverview: React.FC = () => {
                       <div className="flex items-center gap-2 text-[11px] text-slate-600">
                         <Phone className="w-3.5 h-3.5 text-slate-400" />
                         <span>{client.telefono}</span>
+                      </div>
+                      <div className="flex items-center gap-2 pt-1 border-t border-slate-200 mt-1">
+                        <Target className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
+                            Status: {client.etapa_venta || 'Registro'}
+                        </span>
                       </div>
                     </div>
 

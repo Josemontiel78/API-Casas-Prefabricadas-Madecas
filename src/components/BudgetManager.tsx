@@ -1,23 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Budget, BudgetItem, Client, Project, HouseModel } from '@/types';
-import { getBudgets, saveBudget, getClients, getProjects, deleteBudget, saveProject, subscribeToBudgets, subscribeToClients, subscribeToProjects } from '@/services/db';
+import { getBudgets, saveBudget, getClients, getProjects, deleteBudget, saveProject, subscribeToBudgets, subscribeToClients, subscribeToProjects, saveClient, subscribeToHouseModels } from '@/services/db';
 import { analyzeBudgetFile, suggestCubicacionAI } from '@/services/gemini';
 import { BudgetTable } from './budget/BudgetTable';
 import { Plus, Save, Trash2, Calculator, Upload, Loader2, Eye, X, FileText, Search, ArrowRight, Maximize2, Edit3, BrainCircuit, CheckCircle } from 'lucide-react';
-
-const uuid = () => {
-    try {
-        return crypto.randomUUID();
-    } catch (e) {
-        return Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
-    }
-};
+import { uuid } from '@/lib/utils';
 
 const BudgetManager: React.FC = () => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [filteredBudgets, setFilteredBudgets] = useState<Budget[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [houseModels, setHouseModels] = useState<HouseModel[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   
   const [isEditing, setIsEditing] = useState(false);
@@ -39,20 +33,44 @@ const BudgetManager: React.FC = () => {
   });
 
   useEffect(() => {
-    // If a project is selected but no items are present, load defaults from catalog
-    if (formData.proyecto_id && formData.detalle_items.length === 0) {
-      const project = projects.find(p => p.id === formData.proyecto_id);
-      if (project && project.especificaciones_default) {
+    // Sync UI fields when a project/model is selected
+    if (formData.proyecto_id) {
+      const project = projects.find(p => p.id === formData.proyecto_id) || (houseModels.find(m => m.id === formData.proyecto_id) as any);
+      if (project) {
         setFormData(prev => ({
           ...prev,
-          detalle_items: project.especificaciones_default || [],
-          monto_total: project.precio_base,
+          superficie_m2: prev.superficie_m2 || project.superficie_m2 || 0,
+          medidas_radier: prev.medidas_radier || project.medidas_radier || { largo: 0, ancho: 0 }
+        }));
+      }
+    }
+  }, [formData.proyecto_id, projects, houseModels]);
+
+  useEffect(() => {
+    // If a project is selected but no items are present, load defaults from catalog
+    if (formData.proyecto_id && formData.detalle_items.length === 0) {
+      const project = projects.find(p => p.id === formData.proyecto_id) || (houseModels.find(m => m.id === formData.proyecto_id) as any);
+      if (project) {
+        const price = project.precio_base || project.preciobase || 0;
+        const houseItem: BudgetItem = {
+          id: uuid(),
+          descripcion: `CASA MODELO ${(project.modelo || project.nombre || '').toUpperCase()}`,
+          cantidad: 1,
+          unidad: 'un',
+          precio_unitario: price,
+          total: price
+        };
+
+        setFormData(prev => ({
+          ...prev,
+          detalle_items: [houseItem],
+          monto_total: price,
           es_modelo_fijo: project.es_modelo_fijo,
           partidas_adicionales_permitidas: project.partidas_adicionales_permitidas
         }));
       }
     }
-  }, [formData.proyecto_id, projects]);
+  }, [formData.proyecto_id, projects, houseModels]);
 
   // Temp item input
   const [newItem, setNewItem] = useState<BudgetItem>({
@@ -72,9 +90,9 @@ const BudgetManager: React.FC = () => {
     setIsCubicando(true);
     setAnalysisStatus('Generando cubicación técnica...');
     try {
-        const project = projects.find(p => p.id === formData.proyecto_id);
+        const project = projects.find(p => p.id === formData.proyecto_id) || (houseModels.find(m => m.id === formData.proyecto_id) as any);
         const suggestedItems = await suggestCubicacionAI(
-            `Casa modelo ${project?.modelo || 'Estándar'}. ${formData.detalle_items.map(i => i.descripcion).join(', ')}`,
+            `Casa modelo ${(project?.modelo || project?.nombre) || 'Estándar'}. ${formData.detalle_items.map(i => i.descripcion).join(', ')}`,
             formData.superficie_m2 || 50
         );
         
@@ -116,16 +134,31 @@ const BudgetManager: React.FC = () => {
     const unsubBudgets = subscribeToBudgets((data) => setBudgets(data));
     const unsubClients = subscribeToClients((data) => setClients(data));
     const unsubProjects = subscribeToProjects((data) => setProjects(data));
+    const unsubModels = subscribeToHouseModels ? (subscribeToHouseModels as any)((data: any) => setHouseModels(data)) : () => {};
 
+    return () => {
+        unsubBudgets();
+        unsubClients();
+        unsubProjects();
+        if (typeof unsubModels === 'function') unsubModels();
+    };
+  }, []);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
         // Check for house model pre-fill from Design Gallery
         const prefillData = sessionStorage.getItem('prefill_house_model');
+        const selectedClientId = window.localStorage.getItem('selected_client_id');
+        const pendingClientId = window.localStorage.getItem('pending_quote_client_id');
+
         if (prefillData) {
           sessionStorage.removeItem('prefill_house_model');
           try {
             const model = JSON.parse(prefillData) as HouseModel;
             const newId = uuid();
             
+            // The user wants to start with the base model and then add items.
+            // We'll add the base model as the first item.
             const houseItem: BudgetItem = {
               id: uuid(),
               descripcion: `CASA MODELO ${model.nombre.toUpperCase()}`,
@@ -135,34 +168,39 @@ const BudgetManager: React.FC = () => {
               total: model.preciobase
             };
 
+            // Use selectedClientId if available, otherwise fallback
+            const effectiveClientId = selectedClientId || pendingClientId || '';
+
             setFormData({
               id: newId,
-              cliente_id: '',
-              proyecto_id: '', 
+              cliente_id: effectiveClientId,
+              proyecto_id: model.id, 
               fecha: new Date().toISOString().split('T')[0],
-              detalle_items: [houseItem, ...(model.especificaciones || [])],
-              monto_total: model.preciobase + (model.especificaciones?.reduce((acc, i) => acc + i.total, 0) || 0),
+              detalle_items: [houseItem],
+              monto_total: model.preciobase,
               plazo_instalacion_dias: 30,
               lugar_suscripcion: 'Osorno',
-              superficie_m2: model.superficie_m2
+              superficie_m2: model.superficie_m2,
+              notas_personalizacion: `Modelo seleccionado: ${model.nombre}`
             });
             setIsEditing(true);
+            
+            if (selectedClientId) window.localStorage.removeItem('selected_client_id');
+            if (pendingClientId) window.localStorage.removeItem('pending_quote_client_id');
           } catch (e) {
             console.error("Error parsing prefill data", e);
           }
           return;
         }
 
-        // Check for pending quote from catalog or client manager or cubicacion
+        // Check for pending quote from other sources
         const pendingProjectId = window.localStorage.getItem('pending_quote_project_id');
-        const pendingClientId = window.localStorage.getItem('pending_quote_client_id');
         const pendingCubicacion = window.localStorage.getItem('pending_cubicacion_items');
+        const dashTriggerId = window.localStorage.getItem('dash_trigger_budget_id');
 
-        if (pendingProjectId || pendingClientId || pendingCubicacion || window.localStorage.getItem('dash_trigger_budget_id')) {
-            const dashTriggerId = window.localStorage.getItem('dash_trigger_budget_id');
-            
+        if (pendingProjectId || pendingClientId || pendingCubicacion || dashTriggerId) {
             if (pendingProjectId) window.localStorage.removeItem('pending_quote_project_id');
-            if (pendingClientId) window.localStorage.removeItem('pending_quote_client_id');
+            if (pendingClientId && !prefillData) window.localStorage.removeItem('pending_quote_client_id');
             if (pendingCubicacion) window.localStorage.removeItem('pending_cubicacion_items');
             if (dashTriggerId) window.localStorage.removeItem('dash_trigger_budget_id');
             
@@ -193,12 +231,7 @@ const BudgetManager: React.FC = () => {
         }
     }, 1000);
 
-    return () => {
-        unsubBudgets();
-        unsubClients();
-        unsubProjects();
-        clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [budgets, projects]);
 
   useEffect(() => {
@@ -269,8 +302,10 @@ const BudgetManager: React.FC = () => {
                     superficie_m2: Number(parsed.superficie_m2) || prev.superficie_m2
                 }));
                 
+                setShowModelSave(true);
+
                 window.dispatchEvent(new CustomEvent('app-notification', { 
-                    detail: { message: `Se importaron ${newItems.length} ítems con IA`, type: 'success' } 
+                    detail: { message: `Se importaron ${newItems.length} ítems con IA. ¿Deseas guardar esto como un nuevo modelo?`, type: 'success' } 
                 }));
             }
         } catch (err: any) {
@@ -329,11 +364,34 @@ const BudgetManager: React.FC = () => {
     });
   };
 
-  const handleDeleteBudget = async (id: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      if(window.confirm('¿Estás seguro de eliminar este presupuesto?')) {
-          await deleteBudget(id);
+  const [budgetToDelete, setBudgetToDelete] = useState<string | null>(null);
+
+  const confirmDeleteBudget = async () => {
+      if (!budgetToDelete) return;
+      
+      try {
+          window.dispatchEvent(new CustomEvent('app-notification', { 
+              detail: { message: 'Eliminando presupuesto...', type: 'info' } 
+          }));
+          
+          await deleteBudget(budgetToDelete);
+          
+          window.dispatchEvent(new CustomEvent('app-notification', { 
+              detail: { message: 'Presupuesto eliminado con éxito', type: 'success' } 
+          }));
+      } catch (error) {
+          console.error("Error deleting budget:", error);
+          window.dispatchEvent(new CustomEvent('app-notification', { 
+              detail: { message: 'Error al eliminar el presupuesto', type: 'error' } 
+          }));
+      } finally {
+          setBudgetToDelete(null);
       }
+  };
+
+  const handleDeleteBudget = (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setBudgetToDelete(id);
   };
 
   const handleEdit = (budget: Budget, e: React.MouseEvent) => {
@@ -354,7 +412,14 @@ const BudgetManager: React.FC = () => {
     // Save budget
     await saveBudget(formData);
     
-    // Sync project surface if it was 0 in catalog
+    // Update client stage
+    const client = clients.find(c => c.id === formData.cliente_id);
+    if (client) {
+      await saveClient({
+        ...client,
+        etapa_venta: formData.observaciones_negociacion ? 'Negociación' : 'Cotización'
+      });
+    }
     const project = projects.find(p => p.id === formData.proyecto_id);
     if (project && project.superficie_m2 === 0 && formData.superficie_m2 && formData.superficie_m2 > 0) {
       await saveProject({ ...project, superficie_m2: formData.superficie_m2 });
@@ -362,16 +427,13 @@ const BudgetManager: React.FC = () => {
 
     setIsEditing(false);
     
-    const notificationEvent = new CustomEvent('app-notification', { 
-        detail: { message: 'Presupuesto guardado correctamente', type: 'success' } 
-    });
-    window.dispatchEvent(notificationEvent);
+    window.dispatchEvent(new CustomEvent('app-notification', { 
+        detail: { message: 'Presupuesto guardado correctamente. Redirigiendo a contratos...', type: 'success' } 
+    }));
 
-    // Ask if they want to go to contract
-    if (confirm("¿Deseas proceder a generar el contrato para este presupuesto?")) {
-        window.localStorage.setItem('pending_contract_budget_id', formData.id);
-        window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'contracts' }));
-    }
+    // Auto redirect to contracts
+    window.localStorage.setItem('pending_contract_budget_id', formData.id);
+    window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'contracts' }));
   };
 
   const handleSaveAsModel = async () => {
@@ -408,7 +470,13 @@ const BudgetManager: React.FC = () => {
   };
 
   const getClientName = (id: string) => clients.find(c => c.id === id)?.nombre || 'Desconocido';
-  const getProjectName = (id: string) => projects.find(p => p.id === id)?.modelo || 'Desconocido';
+  const getProjectName = (id: string) => {
+    const proj = projects.find(p => p.id === id);
+    if (proj) return proj.modelo;
+    const model = houseModels.find(m => m.id === id);
+    if (model) return model.nombre;
+    return 'Desconocido';
+  };
 
   const handlePrint = (budget: Budget) => {
     const client = clients.find(c => c.id === budget.cliente_id);
@@ -584,19 +652,45 @@ const BudgetManager: React.FC = () => {
               <select required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white font-bold text-slate-800"
                 value={formData.proyecto_id} onChange={e => {
                   const pId = e.target.value;
-                  const selectedProj = projects.find(p => p.id === pId);
+                  const selectedProj = projects.find(p => p.id === pId) || (houseModels.find(m => m.id === pId) as any);
                   
                   let newItems = [...formData.detalle_items];
                   let newTotal = formData.monto_total;
 
-                  if (selectedProj && selectedProj.especificaciones_default && selectedProj.especificaciones_default.length > 0) {
-                    if (confirm("¿Deseas cargar las especificaciones técnicas predeterminadas de este modelo?")) {
-                       const mapped = selectedProj.especificaciones_default.map(i => ({...i, id: crypto.randomUUID()}));
-                       newItems = [...newItems, ...mapped];
-                       newTotal = newItems.reduce((s, i) => s + i.total, 0);
+                  if (selectedProj) {
+                    const name = (selectedProj.modelo || selectedProj.nombre || '').toUpperCase();
+                    const price = selectedProj.precio_base || selectedProj.preciobase || 0;
+                    
+                    // If items are empty, add the model as the first item
+                    if (newItems.length === 0) {
+                      const houseItem: BudgetItem = {
+                        id: uuid(),
+                        descripcion: `CASA MODELO ${name}`,
+                        cantidad: 1,
+                        unidad: 'un',
+                        precio_unitario: price,
+                        total: price
+                      };
+                      newItems = [houseItem];
+                      newTotal = price;
+                    } else if (confirm(`¿Deseas reemplazar/agregar el item base por el Modelo ${name}?`)) {
+                        // Check if a model item already exists and replace it, or just add
+                        const existingIdx = newItems.findIndex(i => i.descripcion.includes('CASA MODELO'));
+                        const newItem: BudgetItem = {
+                            id: uuid(),
+                            descripcion: `CASA MODELO ${name}`,
+                            cantidad: 1,
+                            unidad: 'un',
+                            precio_unitario: price,
+                            total: price
+                        };
+                        if (existingIdx >= 0) {
+                            newItems[existingIdx] = newItem;
+                        } else {
+                            newItems = [newItem, ...newItems];
+                        }
+                        newTotal = newItems.reduce((s, i) => s + i.total, 0);
                     }
-                  } else if (selectedProj?.precio_base && formData.detalle_items.length === 0) {
-                    newTotal = selectedProj.precio_base;
                   }
 
                   setFormData(prev => ({
@@ -610,19 +704,13 @@ const BudgetManager: React.FC = () => {
                   }));
                 }}>
                 <option value="">Seleccione Modelo...</option>
-                {projects.map(p => {
-                  const isSelected = p.id === formData.proyecto_id;
-                  // If selected, prioritize budget surface. If not, use catalog surface.
-                  const displayM2 = isSelected 
-                    ? (formData.superficie_m2 || p.superficie_m2 || 0)
-                    : (p.superficie_m2 || 0);
-                    
-                  return (
-                    <option key={p.id} value={p.id}>
-                      {p.modelo} ({displayM2} m²) - ${p.precio_base?.toLocaleString()}
-                    </option>
-                  );
-                })}
+                {/* Unified list of Models from both sources */}
+                {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.modelo} ({p.superficie_m2}m²) - ${p.precio_base?.toLocaleString()}</option>
+                ))}
+                {houseModels.filter(hm => !projects.some(p => p.modelo === hm.nombre)).map(hm => (
+                    <option key={hm.id} value={hm.id}>{hm.nombre} ({hm.superficie_m2}m²) - ${hm.preciobase?.toLocaleString()}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -692,14 +780,22 @@ const BudgetManager: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Plazo de Instalación (Días Hábiles)</label>
-              <input type="number" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
-                value={formData.plazo_instalacion_dias} onChange={e => setFormData({...formData, plazo_instalacion_dias: Number(e.target.value)})} />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Notas de Personalización (Paso 3)</label>
+              <textarea 
+                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm min-h-[80px]"
+                value={formData.notas_personalizacion || ''} 
+                onChange={e => setFormData({...formData, notas_personalizacion: e.target.value})}
+                placeholder="Ej: Ampliación de terraza, acabados en madera nativa..."
+              />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Ciudad de Suscripción</label>
-              <input type="text" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
-                value={formData.lugar_suscripcion} onChange={e => setFormData({...formData, lugar_suscripcion: e.target.value})} />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Observaciones de Negociación (Paso 5)</label>
+              <textarea 
+                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm min-h-[80px]"
+                value={formData.observaciones_negociacion || ''} 
+                onChange={e => setFormData({...formData, observaciones_negociacion: e.target.value})}
+                placeholder="Ej: Acuerdo de pago en 3 cuotas con 50% pie..."
+              />
             </div>
           </div>
 
@@ -888,6 +984,35 @@ const BudgetManager: React.FC = () => {
   return (
     <div className="space-y-6">
       <BudgetDetailModal />
+
+      {/* Confirmation Modal for Budget Deletion */}
+      {budgetToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[110] p-4 animate-in zoom-in-95 duration-200">
+          <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-slate-200 text-center">
+            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={32} />
+            </div>
+            <h4 className="text-xl font-bold text-slate-800 mb-2">¿Eliminar Presupuesto?</h4>
+            <p className="text-slate-500 text-sm mb-6">
+                Esta acción no se puede deshacer. El presupuesto se eliminará permanentemente de la base de datos.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setBudgetToDelete(null)}
+                className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={confirmDeleteBudget}
+                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 shadow-lg shadow-red-200 transition"
+              >
+                Sí, Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div>

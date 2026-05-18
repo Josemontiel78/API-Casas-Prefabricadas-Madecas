@@ -4,14 +4,7 @@ import { getProjects, saveProject, deleteProject } from '@/services/db';
 import { analyzeBudgetFile } from '@/services/gemini';
 import { Plus, Save, Home, Trash2, Search, Ruler, Layers, Calculator, Edit3, Upload, BrainCircuit, Loader2, FileText, ArrowRight, X, ChevronRight, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-const uuid = () => {
-    try {
-        return crypto.randomUUID();
-    } catch (e) {
-        return Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
-    }
-};
+import { uuid } from '@/lib/utils';
 
 const ProjectManager: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);

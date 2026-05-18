@@ -13,19 +13,13 @@ import {
   ImageIcon,
   Loader2,
   X,
-  CreditCard
+  CreditCard,
+  Maximize2
 } from 'lucide-react';
-import { HouseModel, BudgetItem } from '@/types';
-import { subscribeToHouseModels, saveHouseModel, deleteHouseModel } from '@/services/db';
+import { HouseModel, BudgetItem, Client } from '@/types';
+import { subscribeToHouseModels, saveHouseModel, deleteHouseModel, getClients, saveClient } from '@/services/db';
 import { analyzeHouseModelFile } from '@/services/gemini';
-
-const uuid = () => {
-    try {
-        return crypto.randomUUID();
-    } catch (e) {
-        return Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
-    }
-};
+import { uuid, compressImage } from '@/lib/utils';
 
 const DesignGallery: React.FC = () => {
   const [models, setModels] = useState<HouseModel[]>([]);
@@ -34,13 +28,27 @@ const DesignGallery: React.FC = () => {
   const [currentModel, setCurrentModel] = useState<Partial<HouseModel> | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedFile, setSelectedFile] = useState<{base64: string, type: string} | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
 
   useEffect(() => {
     const unsubscribe = subscribeToHouseModels((data) => {
       setModels(data);
       setLoading(false);
     });
+
+    // Check for selected client context
+    const clientId = window.localStorage.getItem('selected_client_id');
+    if (clientId) {
+      getClients().then(allClients => {
+        const client = allClients.find(c => c.id === clientId);
+        if (client) setSelectedClient(client);
+      });
+    }
+
     return () => unsubscribe();
   }, []);
 
@@ -71,10 +79,105 @@ const DesignGallery: React.FC = () => {
 
   const handleSave = async () => {
     if (currentModel && currentModel.id) {
-      await saveHouseModel(currentModel as HouseModel);
-      setIsEditing(false);
+      try {
+        setAnalyzing(true);
+        setAnalysisStatus('Guardando cambios...');
+        await saveHouseModel(currentModel as HouseModel);
+        
+        // Ensure state is cleared and modal closed explicitly
+        setIsEditing(false);
+        setCurrentModel(null);
+        setSelectedFile(null);
+        setPreviewImage(null);
+        setAnalyzing(false);
+        
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+          detail: { message: 'Diseño guardado correctamente y catálogo actualizado', type: 'success' } 
+        }));
+      } catch (error) {
+        console.error("Error saving model:", error);
+        setAnalyzing(false);
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+          detail: { message: 'Error al actualizar el catálogo', type: 'error' } 
+        }));
+      }
+    }
+  };
+
+  const runAIAnalysis = async (base64: string, type: string) => {
+    setAnalyzing(true);
+    setUploadProgress(5);
+    setAnalysisStatus('Estableciendo túnel con Madacas AI...');
+    
+    try {
+      // Timeline sequence simulator
+      const runTimeline = async () => {
+        const steps = [
+          { p: 15, s: 'Escaneando estructura del documento...' },
+          { p: 30, s: 'Identificando nombre del modelo...' },
+          { p: 45, s: 'Calculando superficie y dimensiones...' },
+          { p: 60, s: 'Extrayendo valores comerciales...' },
+          { p: 75, s: 'Procesando especificaciones técnicas...' },
+          { p: 90, s: 'Finalizando estructuración JSON...' },
+        ];
+        
+        for (const step of steps) {
+          if (!analyzing) break;
+          await new Promise(r => setTimeout(r, 600));
+          setUploadProgress(step.p);
+          setAnalysisStatus(step.s);
+        }
+      };
+
+      runTimeline();
+
+      const extractedData = await analyzeHouseModelFile(base64, type);
+      
+      setUploadProgress(100);
+      setAnalysisStatus('¡Análisis Completado!');
+      
+      // Ensure especificaciones is an array to prevent crashes
+      const safeSpecs = Array.isArray(extractedData.especificaciones) 
+        ? extractedData.especificaciones.map(s => ({
+            descripcion: s.descripcion || 'Sin descripción',
+            id: uuid(),
+            precio_unitario: Number(s.precio_unitario) || 0,
+            cantidad: Number(s.cantidad) || 0,
+            unidad: s.unidad || 'un',
+            total: (Number(s.cantidad) || 0) * (Number(s.precio_unitario) || 0)
+          }))
+        : [];
+        
+      setCurrentModel(prev => {
+        if (!prev) return prev;
+        
+        const updated = {
+          ...prev,
+          nombre: extractedData.nombre || prev.nombre || '',
+          descripcion: extractedData.descripcion || prev.descripcion || '',
+          superficie_m2: Number(extractedData.superficie_m2) || prev.superficie_m2 || 0,
+          preciobase: Number(extractedData.preciobase) || prev.preciobase || 0,
+          especificaciones: safeSpecs.length > 0 ? safeSpecs : prev.especificaciones
+        };
+        return updated;
+      });
+      
       window.dispatchEvent(new CustomEvent('app-notification', { 
-        detail: { message: 'Diseño guardado correctamente', type: 'success' } 
+        detail: { message: 'Inteligencia Artificial: Datos cargados correctamente', type: 'success' } 
+      }));
+
+      // Small delay to hide bar
+      setTimeout(() => {
+        setAnalyzing(false);
+        setUploadProgress(0);
+      }, 1500);
+
+    } catch (error) {
+      console.error(error);
+      setAnalyzing(false);
+      setUploadProgress(0);
+      window.dispatchEvent(new CustomEvent('app-notification', { 
+        detail: { message: 'Error en el motor de IA Madacas', type: 'error' } 
       }));
     }
   };
@@ -83,41 +186,37 @@ const DesignGallery: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setAnalyzing(true);
-    setAnalysisStatus('Subiendo archivo...');
     try {
       const reader = new FileReader();
       reader.onload = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        setAnalysisStatus('Gemini está analizando la ficha técnica...');
-        const extractedData = await analyzeHouseModelFile(base64, file.type);
-        setAnalysisStatus('Finalizando extracción...');
+        const fullDataUrl = reader.result as string;
+        const base64 = fullDataUrl.split(',')[1];
+        setSelectedFile({ base64, type: file.type });
         
-        // Ensure especificaciones is an array to prevent crashes
-        const safeData = {
-          ...extractedData,
-          especificaciones: Array.isArray(extractedData.especificaciones) ? extractedData.especificaciones : []
-        };
-        
-        setCurrentModel(prev => ({
-          ...prev,
-          ...safeData,
-          imagen_url: file.type.startsWith('image/') ? reader.result as string : prev?.imagen_url
-        }));
-        
-        window.dispatchEvent(new CustomEvent('app-notification', { 
-          detail: { message: 'Datos extraídos con éxito mediante IA', type: 'success' } 
-        }));
+        // Predeterminar imagen si es una imagen
+        if (file.type.startsWith('image/')) {
+          try {
+            const compressed = await compressImage(fullDataUrl, 1024, 0.6); // 1024px, 60% quality
+            setCurrentModel(prev => ({
+              ...prev,
+              imagen_url: compressed
+            }));
+          } catch (err) {
+            console.error("Error compressing image:", err);
+            // Fallback to original if compression fails, but warn (actually it might fail Firestore)
+            setCurrentModel(prev => ({
+              ...prev,
+              imagen_url: fullDataUrl
+            }));
+          }
+        }
+
+        // Auto-run analysis
+        await runAIAnalysis(base64, file.type);
       };
       reader.readAsDataURL(file);
     } catch (error) {
       console.error(error);
-      window.dispatchEvent(new CustomEvent('app-notification', { 
-        detail: { message: 'Error al analizar el archivo', type: 'error' } 
-      }));
-    } finally {
-      setAnalyzing(false);
-      setAnalysisStatus('');
     }
   };
 
@@ -126,7 +225,16 @@ const DesignGallery: React.FC = () => {
     m.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const startBudget = (model: HouseModel) => {
+  const startBudget = async (model: HouseModel) => {
+    if (selectedClient) {
+      const updatedClient: Client = {
+        ...selectedClient,
+        etapa_venta: 'Personalización'
+      };
+      await saveClient(updatedClient);
+      window.localStorage.setItem('pending_quote_client_id', selectedClient.id);
+      window.localStorage.removeItem('selected_client_id');
+    }
     // Dispatch event to change view to budgets and pass the selected model
     window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }));
     // Store in session or local storage to pre-fill
@@ -283,9 +391,63 @@ const DesignGallery: React.FC = () => {
     );
   };
 
+  const ImagePreviewModal = () => {
+    if (!previewImage) return null;
+    return (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="absolute inset-0 bg-slate-900/90 backdrop-blur-md" 
+          onClick={() => setPreviewImage(null)} 
+        />
+        <motion.div 
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="relative z-[210] max-w-5xl max-h-[90vh] w-full flex items-center justify-center"
+          onClick={() => setPreviewImage(null)}
+        >
+          <img src={previewImage} alt="Full Preview" className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border-4 border-white/10" />
+          <button 
+            onClick={() => setPreviewImage(null)}
+            className="absolute -top-12 right-0 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all"
+          >
+            <X size={24} />
+          </button>
+        </motion.div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-8 p-4 max-w-7xl mx-auto font-sans">
+      <ImagePreviewModal />
       <ModelDetailModal />
+
+      {selectedClient && (
+        <div className="bg-blue-600 text-white p-4 rounded-2xl shadow-lg border border-blue-400 flex items-center justify-between animate-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center gap-4">
+             <div className="bg-white/20 p-2 rounded-xl">
+                <Search size={24} className="text-white" />
+             </div>
+             <div>
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Selección de diseño activa para:</p>
+                <h4 className="text-xl font-black italic uppercase tracking-tight">{selectedClient.nombre}</h4>
+             </div>
+          </div>
+          <button 
+            onClick={() => {
+              window.localStorage.removeItem('selected_client_id');
+              setSelectedClient(null);
+            }}
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+          >
+            Cancelar Selección
+          </button>
+        </div>
+      )}
+
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
         <div>
           <h1 className="text-4xl font-black text-slate-800 tracking-tighter uppercase italic flex items-center gap-3">
@@ -326,7 +488,12 @@ const DesignGallery: React.FC = () => {
           >
             <div className="h-64 bg-slate-100 relative overflow-hidden">
               {model.imagen_url ? (
-                <img src={model.imagen_url} alt={model.nombre} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                <div className="relative h-full w-full cursor-pointer group/img" onClick={() => setPreviewImage(model.imagen_url!)}>
+                  <img src={model.imagen_url} alt={model.nombre} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                  <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                    <Maximize2 className="text-white" size={32} />
+                  </div>
+                </div>
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
                   <ImageIcon size={60} />
@@ -421,13 +588,50 @@ const DesignGallery: React.FC = () => {
 
                 <div className="group relative aspect-square bg-white rounded-[2rem] border-4 border-dashed border-slate-200 flex flex-col items-center justify-center p-6 text-center transition-all hover:border-emerald-400 hover:bg-emerald-50 group">
                   {analyzing ? (
-                    <div className="flex flex-col items-center">
-                      <Loader2 className="animate-spin text-emerald-500 mb-4" size={48} />
-                      <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">Analizando...</span>
-                      <span className="text-[10px] text-emerald-400 font-bold uppercase mt-2">{analysisStatus}</span>
+                    <div className="flex flex-col items-center w-full">
+                      <div className="relative w-24 h-24 mb-6">
+                        <svg className="w-full h-full" viewBox="0 0 100 100">
+                          <circle 
+                            className="text-slate-200 stroke-current" 
+                            strokeWidth="8" 
+                            cx="50" cy="50" r="40" fill="transparent" 
+                          />
+                          <circle 
+                            className="text-emerald-500 stroke-current transition-all duration-500 ease-out" 
+                            strokeWidth="8" 
+                            strokeDasharray={`${uploadProgress * 2.51}, 251.2`}
+                            strokeLinecap="round" 
+                            cx="50" cy="50" r="40" fill="transparent" 
+                            transform="rotate(-90 50 50)"
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-lg font-black text-slate-700">{uploadProgress}%</span>
+                        </div>
+                      </div>
+                      <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">{analysisStatus}</span>
+                      
+                      <div className="w-full h-1 bg-slate-100 rounded-full mt-6 overflow-hidden">
+                        <motion.div 
+                          className="h-full bg-emerald-500" 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
                     </div>
                   ) : currentModel.imagen_url ? (
-                    <img src={currentModel.imagen_url} alt="preview" className="w-full h-full object-cover rounded-xl" />
+                    <div className="relative w-full h-full cursor-zoom-in group/preview" onClick={() => setPreviewImage(currentModel.imagen_url!)}>
+                      <img src={currentModel.imagen_url} alt="preview" className="w-full h-full object-cover rounded-xl" />
+                      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/preview:opacity-100 transition-opacity flex items-center justify-center rounded-xl">
+                        <span className="text-white font-black text-xs uppercase tracking-widest bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">Click para ampliar</span>
+                      </div>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setSelectedFile(null); setCurrentModel({...currentModel, imagen_url: undefined}); }}
+                        className="absolute top-2 right-2 p-2 bg-rose-500 text-white rounded-lg opacity-0 group-hover/preview:opacity-100 transition-all shadow-lg"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   ) : (
                     <>
                       <div className="bg-slate-100 p-6 rounded-full group-hover:bg-emerald-100 group-hover:scale-110 transition-all mb-4">
@@ -445,8 +649,9 @@ const DesignGallery: React.FC = () => {
                 </div>
 
                 <button 
-                  disabled={analyzing}
-                  className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-xl shadow-indigo-100"
+                  onClick={() => selectedFile && runAIAnalysis(selectedFile.base64, selectedFile.type)}
+                  disabled={analyzing || !selectedFile}
+                  className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:bg-slate-300 shadow-xl shadow-indigo-100"
                 >
                   <Sparkles size={18} />
                   IA COMMERCIAL PRO

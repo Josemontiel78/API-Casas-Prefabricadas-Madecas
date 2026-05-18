@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
     Calculator, 
     Upload, 
@@ -14,20 +14,43 @@ import {
     Ruler,
     Layers,
     Save,
-    ArrowRight
+    ArrowRight,
+    Users,
+    AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { analyzeBudgetFile } from '@/services/gemini';
-import { BudgetItem } from '@/types';
+import { uuid } from '@/lib/utils';
+import { BudgetItem, Client } from '@/types';
+import { getClients } from '@/services/db';
 
 const CubicacionManager: React.FC = () => {
+    const [clients, setClients] = useState<Client[]>([]);
+    const [selectedClientId, setSelectedClientId] = useState<string>('');
     const [items, setItems] = useState<BudgetItem[]>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisStatus, setAnalysisStatus] = useState('');
     const [selectedStep, setSelectedStep] = useState(1);
     const [surface, setSurface] = useState<number>(0);
     const [techAnalysis, setTechAnalysis] = useState<string>('');
+    const [adjustments, setAdjustments] = useState({
+        tolerancia: 5, // 5% default
+        machimbre: 10, // 10% for wood
+        montajeZing: 15 // 15% for roofing overlaps
+    });
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        const loadClients = async () => {
+            const data = await getClients();
+            setClients(data);
+        };
+        loadClients();
+    }, []);
+
+    const updateAdjustedValue = (baseValue: number, factor: number) => {
+        return baseValue * (1 + factor / 100);
+    };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -50,7 +73,7 @@ const CubicacionManager: React.FC = () => {
             
             if (parsed.items) {
                 const formattedItems: BudgetItem[] = parsed.items.map((i: any) => ({
-                    id: crypto.randomUUID(),
+                    id: uuid(),
                     descripcion: i.descripcion,
                     cantidad: i.cantidad || 0,
                     unidad: i.unidad || 'un',
@@ -94,7 +117,7 @@ const CubicacionManager: React.FC = () => {
 
     const addItem = () => {
         const newItem: BudgetItem = {
-            id: crypto.randomUUID(),
+            id: uuid(),
             descripcion: 'Nueva Partida',
             cantidad: 1,
             unidad: 'un',
@@ -132,8 +155,21 @@ const CubicacionManager: React.FC = () => {
                     </h2>
                     <p className="text-slate-500 text-sm italic">Extrae cantidades automáticamente desde planos y presupuestos tipo.</p>
                 </div>
-                <div className="flex gap-2">
-                     <span className="hidden md:flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-600">
+                <div className="flex gap-4">
+                     <div className="flex flex-col items-end">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Cliente Asociado</label>
+                        <select 
+                            value={selectedClientId}
+                            onChange={(e) => setSelectedClientId(e.target.value)}
+                            className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-emerald-500 outline-none"
+                        >
+                            <option value="">Seleccionar Cliente...</option>
+                            {clients.map(c => (
+                                <option key={c.id} value={c.id}>{c.nombre}</option>
+                            ))}
+                        </select>
+                     </div>
+                     <span className="hidden md:flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 self-end">
                         <Ruler size={14} /> {surface} m² detectados
                      </span>
                 </div>
@@ -248,12 +284,53 @@ const CubicacionManager: React.FC = () => {
                                     </div>
                                 )}
 
+                                {/* Factors Adjustment Bar */}
+                                <div className="px-6 py-4 bg-slate-100 border-b border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Tolerancia General (%)</label>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="range" min="0" max="25" step="1" 
+                                                value={adjustments.tolerancia}
+                                                onChange={(e) => setAdjustments({...adjustments, tolerancia: parseInt(e.target.value)})}
+                                                className="flex-1 accent-emerald-600 h-1"
+                                            />
+                                            <span className="text-xs font-bold w-8 text-slate-700">{adjustments.tolerancia}%</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Pérdida Machimbre (%)</label>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="range" min="0" max="30" step="1" 
+                                                value={adjustments.machimbre}
+                                                onChange={(e) => setAdjustments({...adjustments, machimbre: parseInt(e.target.value)})}
+                                                className="flex-1 accent-emerald-600 h-1"
+                                            />
+                                            <span className="text-xs font-bold w-10 text-slate-700">{adjustments.machimbre}%</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Cubicación Zing/Montaje (%)</label>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="range" min="0" max="40" step="1" 
+                                                value={adjustments.montajeZing}
+                                                onChange={(e) => setAdjustments({...adjustments, montajeZing: parseInt(e.target.value)})}
+                                                className="flex-1 accent-emerald-600 h-1"
+                                            />
+                                            <span className="text-xs font-bold w-10 text-slate-700">{adjustments.montajeZing}%</span>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left border-collapse">
                                         <thead>
                                             <tr className="bg-slate-50">
                                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Descripción</th>
-                                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-24 text-center">Cantidad</th>
+                                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-24 text-center">Cant. Base</th>
+                                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-24 text-center">Cant. Ajustada</th>
                                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-20 text-center">Unidad</th>
                                                 {selectedStep === 3 && (
                                                     <>
@@ -265,57 +342,76 @@ const CubicacionManager: React.FC = () => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {items.map((item) => (
-                                                <tr key={item.id} className="border-t border-slate-50 hover:bg-slate-50 transition-colors">
-                                                    <td className="px-6 py-4">
-                                                        <input 
-                                                            type="text" 
-                                                            value={item.descripcion}
-                                                            onChange={(e) => updateItem(item.id, 'descripcion', e.target.value)}
-                                                            className="w-full bg-transparent border-none focus:ring-0 text-sm font-medium text-slate-700"
-                                                        />
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <input 
-                                                            type="number" 
-                                                            value={item.cantidad}
-                                                            onChange={(e) => updateItem(item.id, 'cantidad', parseFloat(e.target.value) || 0)}
-                                                            className="w-full bg-transparent border border-slate-200 rounded-lg py-1 px-2 text-sm text-center font-bold text-slate-700 focus:ring-emerald-500/20 focus:border-emerald-500"
-                                                        />
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <input 
-                                                            type="text" 
-                                                            value={item.unidad}
-                                                            onChange={(e) => updateItem(item.id, 'unidad', e.target.value)}
-                                                            className="w-full bg-transparent border-none text-center focus:ring-0 text-sm text-slate-500"
-                                                        />
-                                                    </td>
-                                                    {selectedStep === 3 && (
-                                                        <>
-                                                            <td className="px-6 py-4 text-right">
-                                                                <input 
-                                                                    type="number" 
-                                                                    value={item.precio_unitario}
-                                                                    onChange={(e) => updateItem(item.id, 'precio_unitario', parseFloat(e.target.value) || 0)}
-                                                                    className="w-full bg-transparent border border-slate-200 rounded-lg py-1 px-2 text-sm text-right font-bold text-emerald-600 focus:ring-emerald-500/20 focus:border-emerald-500"
-                                                                />
-                                                            </td>
-                                                            <td className="px-6 py-4 text-sm font-bold text-slate-800 text-right">
-                                                                ${(item.total).toLocaleString()}
-                                                            </td>
-                                                        </>
-                                                    )}
-                                                    <td className="px-6 py-4 text-center">
-                                                        <button 
-                                                            onClick={() => removeItem(item.id)}
-                                                            className="text-slate-300 hover:text-red-500 transition"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                            {items.map((item) => {
+                                                // Intelligent adjustment selection
+                                                let factor = adjustments.tolerancia;
+                                                const desc = item.descripcion.toLowerCase();
+                                                if (desc.includes('pino') || desc.includes('madera') || desc.includes('machimbre') || desc.includes('forro') || desc.includes('piso')) {
+                                                    factor = adjustments.machimbre;
+                                                } else if (desc.includes('zing') || desc.includes('techo') || desc.includes('zinc') || desc.includes('acanalada')) {
+                                                    factor = adjustments.montajeZing;
+                                                }
+                                                
+                                                const adjustedQty = updateAdjustedValue(item.cantidad, factor);
+                                                const itemTotal = adjustedQty * item.precio_unitario;
+
+                                                return (
+                                                    <tr key={item.id} className="border-t border-slate-50 hover:bg-slate-50 transition-colors">
+                                                        <td className="px-6 py-4">
+                                                            <input 
+                                                                type="text" 
+                                                                value={item.descripcion}
+                                                                onChange={(e) => updateItem(item.id, 'descripcion', e.target.value)}
+                                                                className="w-full bg-transparent border-none focus:ring-0 text-sm font-medium text-slate-700"
+                                                            />
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <input 
+                                                                type="number" 
+                                                                value={item.cantidad}
+                                                                onChange={(e) => updateItem(item.id, 'cantidad', parseFloat(e.target.value) || 0)}
+                                                                className="w-full bg-transparent border border-slate-200 rounded-lg py-1 px-2 text-sm text-center font-bold text-slate-400 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                                            />
+                                                        </td>
+                                                        <td className="px-6 py-4 text-center">
+                                                            <span className="text-sm font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+                                                                {adjustedQty.toFixed(2)}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <input 
+                                                                type="text" 
+                                                                value={item.unidad}
+                                                                onChange={(e) => updateItem(item.id, 'unidad', e.target.value)}
+                                                                className="w-full bg-transparent border-none text-center focus:ring-0 text-sm text-slate-500"
+                                                            />
+                                                        </td>
+                                                        {selectedStep === 3 && (
+                                                            <>
+                                                                <td className="px-6 py-4 text-right">
+                                                                    <input 
+                                                                        type="number" 
+                                                                        value={item.precio_unitario}
+                                                                        onChange={(e) => updateItem(item.id, 'precio_unitario', parseFloat(e.target.value) || 0)}
+                                                                        className="w-full bg-transparent border border-slate-200 rounded-lg py-1 px-2 text-sm text-right font-bold text-emerald-600 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                                                    />
+                                                                </td>
+                                                                <td className="px-6 py-4 text-sm font-bold text-slate-800 text-right">
+                                                                    ${(itemTotal).toLocaleString()}
+                                                                </td>
+                                                            </>
+                                                        )}
+                                                        <td className="px-6 py-4 text-center">
+                                                            <button 
+                                                                onClick={() => removeItem(item.id)}
+                                                                className="text-slate-300 hover:text-red-500 transition"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                             {items.length === 0 && (
                                                 <tr>
                                                     <td colSpan={selectedStep === 3 ? 6 : 4} className="p-12 text-center text-slate-400 italic text-sm">
@@ -327,9 +423,18 @@ const CubicacionManager: React.FC = () => {
                                         {selectedStep === 3 && (
                                             <tfoot>
                                                 <tr className="bg-emerald-50/50">
-                                                    <td colSpan={4} className="px-6 py-6 text-right font-black text-[10px] text-emerald-600 uppercase tracking-widest">Monto Total Estimado</td>
+                                                    <td colSpan={4} className="px-6 py-6 text-right font-black text-[10px] text-emerald-600 uppercase tracking-widest">Monto Total Estimado (Ajustado)</td>
                                                     <td className="px-6 py-6 text-right font-black text-xl text-emerald-700">
-                                                        ${totalCost.toLocaleString()}
+                                                        ${items.reduce((acc, item) => {
+                                                            let factor = adjustments.tolerancia;
+                                                            const desc = item.descripcion.toLowerCase();
+                                                            if (desc.includes('pino') || desc.includes('madera') || desc.includes('machimbre') || desc.includes('forro') || desc.includes('piso')) {
+                                                                factor = adjustments.machimbre;
+                                                            } else if (desc.includes('zing') || desc.includes('techo') || desc.includes('zinc') || desc.includes('acanalada')) {
+                                                                factor = adjustments.montajeZing;
+                                                            }
+                                                            return acc + (updateAdjustedValue(item.cantidad, factor) * item.precio_unitario);
+                                                        }, 0).toLocaleString()}
                                                     </td>
                                                     <td></td>
                                                 </tr>
@@ -348,7 +453,16 @@ const CubicacionManager: React.FC = () => {
                                         </div>
                                     </div>
                                     <button 
-                                        onClick={() => setSelectedStep(selectedStep + 1)}
+                                        onClick={() => {
+                                            if (!selectedClientId) {
+                                                window.dispatchEvent(new CustomEvent('app-notification', { 
+                                                    detail: { message: "Por favor seleccione un cliente antes de continuar.", type: 'error' } 
+                                                }));
+                                                setSelectedStep(1);
+                                                return;
+                                            }
+                                            setSelectedStep(selectedStep + 1);
+                                        }}
                                         className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 flex items-center gap-2 transition"
                                     >
                                         Continuar <ChevronRight size={18} />
@@ -370,16 +484,54 @@ const CubicacionManager: React.FC = () => {
                                 <div>
                                     <h3 className="text-2xl font-bold text-slate-800">Cubicación Finalizada</h3>
                                     <p className="text-slate-500 max-w-md mx-auto mt-2">
-                                        Se han procesado {items.length} partidas con un valor total de ${totalCost.toLocaleString()}. 
-                                        Puede exportar este detalle directamente a un nuevo presupuesto para su cliente.
+                                        Se han procesado {items.length} partidas. 
+                                        El monto final ajustado (incluyendo tolerancias y machimbres) es de 
+                                        <span className="block text-emerald-600 font-black text-2xl mt-1">
+                                            ${items.reduce((acc, item) => {
+                                                let factor = adjustments.tolerancia;
+                                                const desc = item.descripcion.toLowerCase();
+                                                if (desc.includes('pino') || desc.includes('madera') || desc.includes('machimbre') || desc.includes('forro') || desc.includes('piso')) {
+                                                    factor = adjustments.machimbre;
+                                                } else if (desc.includes('zing') || desc.includes('techo') || desc.includes('zinc') || desc.includes('acanalada')) {
+                                                    factor = adjustments.montajeZing;
+                                                }
+                                                return acc + (updateAdjustedValue(item.cantidad, factor) * item.precio_unitario);
+                                            }, 0).toLocaleString()}
+                                        </span>
                                     </p>
                                 </div>
                                 <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
                                     <button 
                                         onClick={() => {
+                                            if (items.length === 0) {
+                                                window.dispatchEvent(new CustomEvent('app-notification', { 
+                                                    detail: { message: "No hay partidas para exportar.", type: 'error' } 
+                                                }));
+                                                return;
+                                            }
+
+                                            const adjustedItems = items.map(item => {
+                                                let factor = adjustments.tolerancia;
+                                                const desc = item.descripcion.toLowerCase();
+                                                if (desc.includes('pino') || desc.includes('madera') || desc.includes('machimbre') || desc.includes('forro') || desc.includes('piso')) {
+                                                    factor = adjustments.machimbre;
+                                                } else if (desc.includes('zing') || desc.includes('techo') || desc.includes('zinc') || desc.includes('acanalada')) {
+                                                    factor = adjustments.montajeZing;
+                                                }
+                                                const adjustedQty = updateAdjustedValue(item.cantidad, factor);
+                                                return {
+                                                    ...item,
+                                                    cantidad: parseFloat(adjustedQty.toFixed(2)),
+                                                    total: adjustedQty * item.precio_unitario
+                                                };
+                                            });
+                                            const finalTotal = adjustedItems.reduce((acc, i) => acc + i.total, 0);
                                             // Save to local storage for BudgetManager to pick up
-                                            localStorage.setItem('pending_cubicacion_items', JSON.stringify(items));
-                                            localStorage.setItem('pending_cubicacion_total', totalCost.toString());
+                                            localStorage.setItem('pending_cubicacion_items', JSON.stringify(adjustedItems));
+                                            localStorage.setItem('pending_cubicacion_total', finalTotal.toString());
+                                            if (selectedClientId) {
+                                                localStorage.setItem('pending_quote_client_id', selectedClientId);
+                                            }
                                             window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }));
                                         }}
                                         className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 shadow-xl shadow-emerald-500/30 flex items-center justify-center gap-2 transform hover:-translate-y-1 transition"

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Client } from '@/types';
 import { getClients, saveClient, deleteClient, subscribeToClients } from '@/services/db';
+import { uuid, cn } from '@/lib/utils';
 import { Plus, Search, Save, Users, Trash2, Phone, Mail, MapPin, Map as MapIcon, Edit3 } from 'lucide-react';
 import MapProjectPicker from '@/components/MapProjectPicker';
 
@@ -10,7 +11,8 @@ const ClientManager: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Client>({
-    id: '', nombre: '', rut: '', domicilio: '', telefono: '', correo: ''
+    id: '', nombre: '', rut: '', domicilio: '', telefono: '', correo: '', 
+    vendedor_nombre: '', etapa_venta: 'Registro'
   });
 
   useEffect(() => {
@@ -64,7 +66,7 @@ const ClientManager: React.FC = () => {
 
   const handleNew = () => {
     setFormData({
-      id: crypto.randomUUID(),
+      id: uuid(),
       nombre: '', rut: '', domicilio: '', telefono: '', correo: '',
       fecha_registro: new Date().toISOString()
     });
@@ -82,9 +84,9 @@ const ClientManager: React.FC = () => {
     });
     window.dispatchEvent(event);
 
-    if (confirm("¿Deseas pasar a la etapa de Cotización para este cliente?")) {
-        window.localStorage.setItem('pending_quote_client_id', formData.id);
-        window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }));
+    if (confirm("¿Deseas seleccionar un diseño para este cliente?")) {
+        window.localStorage.setItem('selected_client_id', formData.id);
+        window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'designs' }));
     }
   };
 
@@ -104,6 +106,14 @@ const ClientManager: React.FC = () => {
           window.dispatchEvent(event);
       }
   };
+
+  const handleLocationSelect = useCallback((loc: { lat: number; lng: number }) => {
+    setFormData(prev => {
+      // Avoid update if location is the same (to prevent infinite loops)
+      if (prev.location?.lat === loc.lat && prev.location?.lng === loc.lng) return prev;
+      return { ...prev, location: loc };
+    });
+  }, []);
 
   if (isEditing) {
     return (
@@ -125,9 +135,16 @@ const ClientManager: React.FC = () => {
                 value={formData.rut} onChange={e => setFormData({...formData, rut: e.target.value})} placeholder="12.345.678-9" />
             </div>
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Domicilio</label>
-              <input required type="text" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition" 
-                value={formData.domicilio} onChange={e => setFormData({...formData, domicilio: e.target.value})} placeholder="Dirección completa" />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Domicilio (Calle y Número, Ciudad)</label>
+              <input 
+                required 
+                type="text" 
+                className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" 
+                value={formData.domicilio} 
+                onChange={e => setFormData({...formData, domicilio: e.target.value})} 
+                placeholder="Ej: Av. Principal 123, Valdivia" 
+              />
+              <p className="text-[10px] text-slate-400 mt-1">El mapa inferior se sincronizará automáticamente mientras escribes.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Teléfono</label>
@@ -135,9 +152,28 @@ const ClientManager: React.FC = () => {
                 value={formData.telefono} onChange={e => setFormData({...formData, telefono: e.target.value})} placeholder="+569..." />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Correo Electrónico</label>
-              <input required type="email" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition" 
-                value={formData.correo} onChange={e => setFormData({...formData, correo: e.target.value})} placeholder="correo@ejemplo.com" />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Correo Electrónico (Opcional)</label>
+              <input type="email" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition" 
+                value={formData.correo || ''} onChange={e => setFormData({...formData, correo: e.target.value})} placeholder="correo@ejemplo.com" />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Ejecutivo Responsable</label>
+              <input type="text" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" 
+                value={formData.vendedor_nombre || ''} onChange={e => setFormData({...formData, vendedor_nombre: e.target.value})} placeholder="Nombre del ejecutivo" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Etapa del Negocio</label>
+              <select className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition bg-white"
+                value={formData.etapa_venta || 'Registro'} onChange={e => setFormData({...formData, etapa_venta: e.target.value as any})}>
+                <option value="Registro">1. Registro e Ingreso</option>
+                <option value="Selección Modelo">2. Selección de Modelo</option>
+                <option value="Personalización">3. Personalización</option>
+                <option value="Cotización">4. Cotización</option>
+                <option value="Negociación">5. Negociación</option>
+                <option value="Cierre">6. Cierre (Contrato)</option>
+                <option value="Postventa">7. Postventa</option>
+              </select>
             </div>
             
             <div className="col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-200">
@@ -148,7 +184,8 @@ const ClientManager: React.FC = () => {
               <div className="bg-white p-1 rounded-xl border border-slate-200 overflow-hidden shadow-sm">
                 <MapProjectPicker 
                   initialLocation={formData.location}
-                  onLocationSelect={(loc) => setFormData({...formData, location: loc})} 
+                  externalSearchQuery={formData.domicilio}
+                  onLocationSelect={handleLocationSelect} 
                 />
               </div>
               <p className="text-[10px] text-slate-500 mt-2 text-center">
@@ -225,11 +262,26 @@ const ClientManager: React.FC = () => {
               </div>
               <div>
                 <h4 className="font-bold text-slate-800 text-lg leading-tight">{client.nombre}</h4>
-                <p className="text-xs text-slate-500 font-mono mt-1 bg-slate-100 inline-block px-1.5 py-0.5 rounded">{client.rut}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-xs text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded">{client.rut}</p>
+                  <span className={cn(
+                    "text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full border",
+                    client.etapa_venta === 'Cierre' ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
+                    client.etapa_venta === 'Postventa' ? "bg-indigo-50 text-indigo-600 border-indigo-100" :
+                    "bg-blue-50 text-blue-600 border-blue-100"
+                  )}>
+                    {client.etapa_venta || 'Registro'}
+                  </span>
+                </div>
               </div>
             </div>
             
             <div className="space-y-2.5 pt-2 border-t border-slate-100">
+              {client.vendedor_nombre && (
+                <div className="flex items-center gap-3 text-[10px] font-bold text-indigo-600 mb-1">
+                   <Users size={12} /> Ejecutivo: {client.vendedor_nombre}
+                </div>
+              )}
               <div className="flex items-center gap-3 text-sm text-slate-600">
                  <Phone size={14} className="text-slate-400" /> {client.telefono}
               </div>
@@ -237,7 +289,8 @@ const ClientManager: React.FC = () => {
                  <Mail size={14} className="text-slate-400" /> <span className="truncate">{client.correo}</span>
               </div>
               <div className="flex items-center gap-3 text-sm text-slate-600">
-                 <MapPin size={14} className="text-slate-400 shrink-0" /> <span className="truncate">{client.domicilio}</span>
+                 <MapPin size={14} className="text-slate-400 shrink-0" /> 
+                 <span className="truncate">{client.domicilio}</span>
               </div>
             </div>
 
@@ -250,12 +303,12 @@ const ClientManager: React.FC = () => {
                 </button>
                 <button 
                   onClick={() => {
-                    window.localStorage.setItem('pending_quote_client_id', client.id);
-                    window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }));
+                    window.localStorage.setItem('selected_client_id', client.id);
+                    window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'designs' }));
                   }}
-                  className="flex-1 py-2 text-[10px] font-bold uppercase tracking-wider text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition"
+                  className="flex-1 py-2 text-[10px] font-bold uppercase tracking-wider text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition"
                 >
-                    Iniciar Cotización
+                    Elegir Diseño
                 </button>
             </div>
           </div>

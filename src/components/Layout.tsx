@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ViewState, UserRole, AppNotification } from '@/types';
+import { uuid } from '@/lib/utils';
 import { 
   Home, 
   Users, 
@@ -59,7 +60,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
   useEffect(() => {
     const handleNotification = (e: any) => {
       const newNotif: AppNotification = {
-        id: crypto.randomUUID(),
+        id: uuid(),
         message: e.detail.message,
         type: e.detail.type || 'info'
       };
@@ -88,7 +89,6 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
     { id: 'cubicacion', label: 'Cubicación Inteligente', icon: Calculator },
     { id: 'map', label: 'Georeferencia Global', icon: MapIcon },
     { id: 'ai-assistant', label: 'IA Comercial Pro', icon: BrainCircuit },
-    { id: 'projects', label: 'Gestión de Obras', icon: FolderOpen },
     { id: 'settings', label: 'Configuración Empresa', icon: Settings },
   ];
 

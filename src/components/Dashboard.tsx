@@ -57,6 +57,7 @@ const Dashboard: React.FC = () => {
   const [warnings, setWarnings] = useState<Warning[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [conversionData, setConversionData] = useState<any[]>([]);
+  const [funnelData, setFunnelData] = useState<any[]>([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -66,6 +67,22 @@ const Dashboard: React.FC = () => {
         getBudgets(),
         getContracts()
       ]);
+
+      // Sales Funnel Data
+      const stages = [
+        'Registro', 
+        'Selección Modelo', 
+        'Personalización', 
+        'Cotización', 
+        'Negociación', 
+        'Cierre', 
+        'Postventa'
+      ];
+      
+      const funnelValues = stages.map(stage => ({
+        name: stage,
+        count: clients.filter(c => (c.etapa_venta || 'Registro') === stage).length
+      }));
 
       const totalVolume = contracts.reduce((sum, c) => sum + (c.monto_total || 0), 0);
       const pendingVolume = budgets.reduce((sum, b) => {
@@ -174,6 +191,7 @@ const Dashboard: React.FC = () => {
       });
 
       setChartData(last6Months);
+      setFunnelData(funnelValues);
 
       // Conversion Data
       const lost = Math.max(0, budgets.length - contracts.length);
@@ -411,60 +429,66 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Pipeline Analysis */}
         <div className="lg:col-span-2 space-y-6">
-           <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 h-full">
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 h-full">
               <div className="flex justify-between items-center mb-8">
                 <div>
-                    <h3 className="text-xl font-bold text-slate-800">Pipeline por Etapa</h3>
-                    <p className="text-sm text-slate-500">Volumen financiero distribuido por proceso</p>
+                    <h3 className="text-xl font-bold text-slate-800">Embudo de Ventas (7 Pasos)</h3>
+                    <p className="text-sm text-slate-500">Distribución de clientes por etapa del ciclo comercial</p>
                 </div>
               </div>
 
-              <div className="space-y-8">
-                  <div>
-                      <div className="flex justify-between text-sm mb-2">
-                          <span className="font-bold text-slate-600">Presupuestos en Proceso</span>
-                          <span className="font-mono text-indigo-600 font-bold">${stats.pendingVolume.toLocaleString('es-CL')}</span>
-                      </div>
-                      <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                          <motion.div 
-                            initial={{ width: 0 }}
-                            animate={{ width: `${Math.min(100, (stats.pendingVolume / ((stats.totalVolume + stats.pendingVolume) || 1)) * 100)}%` }}
-                            className="h-full bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(79,70,229,0.3)]"
-                          />
-                      </div>
-                  </div>
+              <div className="space-y-4">
+                  {funnelData.map((stage, idx) => {
+                    const total = stats.totalClients || 1;
+                    const pct = (stage.count / total) * 100;
+                    const colors = [
+                      'bg-slate-400',
+                      'bg-blue-400',
+                      'bg-indigo-400',
+                      'bg-orange-400',
+                      'bg-amber-400',
+                      'bg-emerald-500',
+                      'bg-indigo-600'
+                    ];
 
-                  <div>
-                      <div className="flex justify-between text-sm mb-2">
-                          <span className="font-bold text-slate-600">Volumen de Cierre</span>
-                          <span className="font-mono text-emerald-600 font-bold">${stats.totalVolume.toLocaleString('es-CL')}</span>
-                      </div>
-                      <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                          <motion.div 
-                            initial={{ width: 0 }}
-                            animate={{ width: `${Math.min(100, (stats.totalVolume / ((stats.totalVolume + stats.pendingVolume) || 1)) * 100)}%` }}
-                            className="h-full bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.3)]"
-                          />
-                      </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
-                      {[
-                        { label: 'Visitas', val: stats.totalClients, icon: Users, color: 'text-blue-500' },
-                        { label: 'Cotizado', val: stats.totalQuotes, icon: Calculator, color: 'text-indigo-500' },
-                        { label: 'Cierre', val: stats.signedContracts, icon: Target, color: 'text-emerald-500' },
-                        { label: 'Proyección', val: `$${((stats.totalVolume + stats.pendingVolume) / 1000000).toFixed(1)}M`, icon: TrendingUp, color: 'text-amber-500' },
-                      ].map((item, i) => (
-                        <div key={i} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                             <item.icon className={cn("w-5 h-5 mb-2", item.color)} />
-                             <p className="text-xl font-black text-slate-800">{item.val}</p>
-                             <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">{item.label}</p>
+                    return (
+                      <div key={stage.name}>
+                        <div className="flex justify-between text-[10px] font-black uppercase tracking-tight mb-1">
+                          <span className="text-slate-500 flex items-center gap-1">
+                            <span className="w-4 h-4 rounded bg-slate-100 flex items-center justify-center text-[8px] text-slate-400">{idx + 1}</span>
+                            {stage.name}
+                          </span>
+                          <span className="text-slate-800">{stage.count} Clientes</span>
                         </div>
-                      ))}
-                  </div>
+                        <div className="h-2 bg-slate-50 rounded-full overflow-hidden flex">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: 0.8, delay: idx * 0.1 }}
+                            className={cn("h-full rounded-full min-w-[2px]", colors[idx])}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
-           </div>
-        </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+                       {[
+                         { label: 'Visitas', val: stats.totalClients, icon: Users, color: 'text-blue-500' },
+                         { label: 'Cotizado', val: stats.totalQuotes, icon: Calculator, color: 'text-indigo-500' },
+                         { label: 'Cierre', val: stats.signedContracts, icon: Target, color: 'text-emerald-500' },
+                         { label: 'Proyección', val: `$${((stats.totalVolume + stats.pendingVolume) / 1000000).toFixed(1)}M`, icon: TrendingUp, color: 'text-amber-500' },
+                       ].map((item, i) => (
+                         <div key={i} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                              <item.icon className={cn("w-5 h-5 mb-2", item.color)} />
+                              <p className="text-xl font-black text-slate-800">{item.val}</p>
+                              <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">{item.label}</p>
+                         </div>
+                       ))}
+                   </div>
+               </div>
+            </div>
 
         {/* Sidebar Activity */}
         <div className="space-y-6">

@@ -53,8 +53,11 @@ export const getClients = async (): Promise<Client[]> => {
 export const saveClient = async (client: Client): Promise<void> => {
   try {
     const docRef = doc(db, COLLECTIONS.CLIENTS, client.id);
+    const sanitizedData = Object.fromEntries(
+      Object.entries(client).filter(([_, v]) => v !== undefined)
+    );
     const data = {
-      ...client,
+      ...sanitizedData,
       vendedor_id: client.vendedor_id || 'system'
     };
     await setDoc(docRef, data, { merge: true });
@@ -86,8 +89,11 @@ export const getProjects = async (): Promise<Project[]> => {
 export const saveProject = async (project: Project): Promise<void> => {
   try {
     const docRef = doc(db, COLLECTIONS.PROJECTS, project.id);
+    const sanitizedData = Object.fromEntries(
+      Object.entries(project).filter(([_, v]) => v !== undefined)
+    );
     const data = {
-      ...project,
+      ...sanitizedData,
       vendedor_id: project.vendedor_id || 'system'
     };
     await setDoc(docRef, data, { merge: true });
@@ -119,8 +125,11 @@ export const getBudgets = async (): Promise<Budget[]> => {
 export const saveBudget = async (budget: Budget): Promise<void> => {
   try {
     const docRef = doc(db, COLLECTIONS.BUDGETS, budget.id);
+    const sanitizedData = Object.fromEntries(
+      Object.entries(budget).filter(([_, v]) => v !== undefined)
+    );
     const data = {
-      ...budget,
+      ...sanitizedData,
       vendedor_id: budget.vendedor_id || 'system'
     };
     await setDoc(docRef, data, { merge: true });
@@ -131,9 +140,13 @@ export const saveBudget = async (budget: Budget): Promise<void> => {
 
 export const deleteBudget = async (id: string): Promise<void> => {
   try {
+    console.log(`[Database] Attempting to delete budget: ${id}`);
     await deleteDoc(doc(db, COLLECTIONS.BUDGETS, id));
+    console.log(`[Database] Successfully deleted budget: ${id}`);
   } catch (err) {
+    console.error(`[Database] Failed to delete budget ${id}:`, err);
     handleFirestoreError(err, OperationType.DELETE, COLLECTIONS.BUDGETS);
+    throw err;
   }
 };
 
@@ -152,8 +165,14 @@ export const getContracts = async (): Promise<Contract[]> => {
 export const saveContract = async (contract: Contract): Promise<void> => {
   try {
     const docRef = doc(db, COLLECTIONS.CONTRACTS, contract.id);
+    
+    // Remove undefined fields to prevent Firestore errors
+    const sanitizedData = Object.fromEntries(
+      Object.entries(contract).filter(([_, v]) => v !== undefined)
+    );
+
     const data = {
-      ...contract,
+      ...sanitizedData,
       vendedor_id: contract.vendedor_id || 'system'
     };
     await setDoc(docRef, data, { merge: true });
@@ -186,7 +205,10 @@ export const getHouseModels = async (): Promise<HouseModel[]> => {
 export const saveHouseModel = async (model: HouseModel): Promise<void> => {
   try {
     const docRef = doc(db, COLLECTIONS.HOUSE_MODELS, model.id);
-    await setDoc(docRef, model, { merge: true });
+    const sanitizedData = Object.fromEntries(
+      Object.entries(model).filter(([_, v]) => v !== undefined)
+    );
+    await setDoc(docRef, sanitizedData, { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, COLLECTIONS.HOUSE_MODELS);
   }

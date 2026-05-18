@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { getClients, getClientCommercialHistory } from '@/services/db';
+import { getClients, getClientCommercialHistory, deleteBudget } from '@/services/db';
 import { analyzeCommercialAI } from '@/services/gemini';
 import { Client, Project, Budget, Contract } from '@/types';
-import { Search, User, Home, Calculator, FileCheck, MapPin, ExternalLink, Calendar, DollarSign, Map as MapIcon, BrainCircuit, Loader2 } from 'lucide-react';
+import { Search, User, Home, Calculator, FileCheck, MapPin, ExternalLink, Calendar, DollarSign, Map as MapIcon, BrainCircuit, Loader2, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
@@ -230,7 +230,26 @@ const CommercialHub: React.FC = () => {
                             <p className="text-xs text-slate-500">{b.fecha}</p>
                           </div>
                         </div>
-                        <span className="text-xs font-mono text-emerald-600 bg-emerald-50 px-2 py-1 rounded">VIGENTE</span>
+                        <div className="flex items-center gap-2">
+                           <span className="text-xs font-mono text-emerald-600 bg-emerald-50 px-2 py-1 rounded">VIGENTE</span>
+                           <button 
+                             onClick={async (e) => {
+                               e.stopPropagation();
+                               if (confirm('¿Eliminar este presupuesto?')) {
+                                 try {
+                                   await deleteBudget(b.id);
+                                   handleSearch(clientData.client.rut); // Refresh view
+                                 } catch (error) {
+                                   console.error("Error deleting from hub", error);
+                                 }
+                               }
+                             }}
+                             className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                             title="Eliminar"
+                           >
+                             <Trash2 size={14} />
+                           </button>
+                        </div>
                       </div>
                     ))}
                      {clientData.budgets.length === 0 && <p className="text-slate-400 italic text-sm">Sin cotizaciones registradas.</p>}

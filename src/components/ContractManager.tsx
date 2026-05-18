@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Contract, Budget, Client, Project, Vendor, ContractStatus, PaymentInstallment } from '@/types';
-import { getContracts, saveContract, getBudgets, getClients, getProjects, getVendor, deleteContract, subscribeToContracts, subscribeToBudgets, subscribeToClients, subscribeToProjects } from '@/services/db';
+import { Contract, Budget, Client, Project, Vendor, ContractStatus, PaymentInstallment, HouseModel } from '@/types';
+import { getContracts, saveContract, getBudgets, getClients, getProjects, getVendor, deleteContract, subscribeToContracts, subscribeToBudgets, subscribeToClients, subscribeToProjects, saveClient, subscribeToHouseModels } from '@/services/db';
 import { generateContractText } from '@/services/gemini';
+import { uuid, compressImage } from '@/lib/utils';
 import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, Edit3, Eye, FileType, Trash2, Maximize2, AlertCircle, Calculator, ArrowRight, Upload, Image as ImageIcon, DollarSign } from 'lucide-react';
 
 // Input assets provided by the user
@@ -12,6 +13,28 @@ const getSafeInputFile = (name: string): string => {
   } catch (e) {
     return '';
   }
+};
+
+const getLatestFiles = (): string[] => {
+  const files: string[] = [];
+  // Increased range to find most recent uploads
+  for (let i = 40; i >= 0; i--) {
+    const file = getSafeInputFile(`input_file_${i}`);
+    if (file) files.push(file);
+  }
+  return files;
+};
+
+const getLogoFile = (): string => {
+  const files = getLatestFiles();
+  // Based on current input history, files[1] is likely the logo if background was last
+  return files[1] || files[0] || '';
+};
+
+const getWatermarkFile = (): string => {
+  const files = getLatestFiles();
+  // Using files[0] as the most recent upload (likely the background)
+  return files[0] || '';
 };
 
 import { MADECAS_LOGO_SVG, MADECAS_LOGO_HEADER_SVG, MADECAS_FOOTER_SVG } from '@/constants/assets';
@@ -24,6 +47,7 @@ const ContractManager: React.FC = () => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [houseModels, setHouseModels] = useState<HouseModel[]>([]);
   const [vendor, setVendor] = useState<Vendor | null>(null);
 
   // Form State
@@ -59,7 +83,7 @@ const ContractManager: React.FC = () => {
   // Selection Logic Helpers
   const selectedBudget = budgets.find(b => b.id === selectedBudgetId);
   const selectedClient = selectedBudget ? clients.find(c => c.id === selectedBudget.cliente_id) : null;
-  const selectedProject = selectedBudget ? projects.find(p => p.id === selectedBudget.proyecto_id) : null;
+  const selectedProject = selectedBudget ? (projects.find(p => p.id === selectedBudget.proyecto_id) || houseModels.find(m => m.id === selectedBudget.proyecto_id) as any) : null;
 
   useEffect(() => {
     if (selectedProject && selectedBudget) {
@@ -81,6 +105,7 @@ const ContractManager: React.FC = () => {
     const unsubBudgets = subscribeToBudgets((data) => setBudgets(data));
     const unsubClients = subscribeToClients((data) => setClients(data));
     const unsubProjects = subscribeToProjects((data) => setProjects(data));
+    const unsubHouseModels = subscribeToHouseModels ? (subscribeToHouseModels as any)((data: any) => setHouseModels(data)) : () => {};
     
     getVendor().then(setVendor);
 
@@ -98,6 +123,7 @@ const ContractManager: React.FC = () => {
         unsubBudgets();
         unsubClients();
         unsubProjects();
+        if (typeof unsubHouseModels === 'function') unsubHouseModels();
         clearTimeout(timer);
     };
   }, []);
@@ -144,7 +170,18 @@ const ContractManager: React.FC = () => {
   };
 
   const handleGenerate = async () => {
-    if (!selectedClient || !selectedProject || !selectedBudget || !vendor) return;
+    if (!selectedClient || !selectedProject || !selectedBudget || !vendor) {
+        let missing = [];
+        if (!selectedClient) missing.push("Cliente");
+        if (!selectedProject) missing.push("Proyecto/Modelo");
+        if (!selectedBudget) missing.push("Presupuesto");
+        if (!vendor) missing.push("Datos del Vendedor");
+        
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+            detail: { message: `Faltan datos requeridos para generar: ${missing.join(', ')}`, type: 'info' } 
+        }));
+        return;
+    }
 
     if (!startDate) {
         window.dispatchEvent(new CustomEvent('app-notification', { 
@@ -216,7 +253,12 @@ const ContractManager: React.FC = () => {
   };
 
   const handleFinalize = async () => {
-    if (!selectedClient || !selectedProject || !selectedBudget || !vendor) return;
+    if (!selectedClient || !selectedProject || !selectedBudget || !vendor) {
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+            detail: { message: `Faltan datos requeridos para guardar.`, type: 'error' } 
+        }));
+        return;
+    }
     
     const deliveryDate = new Date(startDate);
     let addedDays = 0;
@@ -228,7 +270,7 @@ const ContractManager: React.FC = () => {
 
     // Create or update the contract record with SNAPSHOTS
     const contractData: Contract = {
-      id: editingContractId || crypto.randomUUID(),
+      id: editingContractId || uuid(),
       cliente_id: selectedClient.id,
       vendedor_id: vendor.id,
       proyecto_id: selectedProject.id,
@@ -257,6 +299,15 @@ const ContractManager: React.FC = () => {
     };
 
     await saveContract(contractData);
+    
+    // Update Client Stage to Cierre
+    if (selectedClient) {
+      await saveClient({
+        ...selectedClient,
+        etapa_venta: 'Cierre'
+      });
+    }
+
     setIsCreating(false);
     setEditingContractId(null);
     setParentContractId(null);
@@ -349,7 +400,7 @@ const ContractManager: React.FC = () => {
 
   const downloadWord = () => {
     if (!generatedText) return;
-    const htmlContent = formatTextToHtml(generatedText);
+    const htmlContent = formatTextToHtml(generatedText.replace(/FIRMAS[\s\S]*$/i, '').trim());
     const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Contrato</title></head><body>";
     const footer = "</body></html>";
     const sourceHTML = header + htmlContent + footer;
@@ -435,7 +486,17 @@ const ContractManager: React.FC = () => {
 
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
+      let base64 = event.target?.result as string;
+      
+      // If image, compress it
+      if (file.type.startsWith('image/')) {
+        try {
+          base64 = await compressImage(base64, 1200, 0.6);
+        } catch (err) {
+          console.error("Compression error:", err);
+        }
+      }
+
       const contract = contracts.find(c => c.id === activeContractForUpload);
       if (contract) {
         const updatedContract = { 
@@ -469,42 +530,90 @@ const ContractManager: React.FC = () => {
   const formatTextToHtml = (text: string) => {
     if (!text) return '';
     
-    // Split text into paragraphs based on double newlines
-    const parts = text.split(/\n\n+/);
+        // Semantic highlighting patterns
+        const highlightPatterns = [
+            { regex: /R\.?U\.?T\.?:?\s?(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])/gi, replacement: '<span class="blue-text">$1</span>' },
+            { regex: /((\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+(\d{4}))/gi, replacement: '<strong class="blue-text">$1</strong>' },
+            { regex: /(\$\s?\d{1,3}(\.\d{3})*(,\d+)?( \(.*?\))?)/g, replacement: '<strong class="blue-text">$1</strong>' },
+            { regex: /(INVERSIONES E&E SPA|INVERSIONES E&E)/g, replacement: '<strong>$1</strong>' },
+            { regex: /(SR\/A|don \(a\))\s+([A-ZÁÉÍÓÚÑ\s]{5,})/g, replacement: '$1 <strong class="blue-text underline">$2</strong>' },
+            // Highlight specific clauses and bullet start
+            { regex: /^(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO PRIMERO|DECIMO SEGUNDO|DECIMO TERCERO):/m, replacement: '<strong style="text-decoration: underline;">$1:</strong>' }
+        ];
+
+        let processedText = text;
+        highlightPatterns.forEach(p => {
+            processedText = processedText.replace(p.regex, p.replacement);
+        });
+
+        const parts = processedText.split(/\n\n+/);
     
     return parts.map(part => {
         let content = part.trim();
         if (!content) return '';
 
+        // Headers
+        if (content.startsWith('# ')) {
+             return `<h1 style="text-align:center; font-size:16pt; font-weight:bold; text-transform:uppercase; margin-bottom: 25px; text-decoration: underline;">${content.replace(/^# /, '')}</h1>`;
+        }
+
         // Process bold markdown
         content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
-        // Headers
-        if (content.startsWith('# ')) {
-             return `<h1 style="text-align:center; font-size:14pt; font-weight:bold; text-transform:uppercase; margin-bottom: 20px; text-decoration: underline; page-break-after: avoid;">${content.replace(/^# /, '')}</h1>`;
-        }
-        if (content.startsWith('## ')) {
-             return `<h2 style="text-align:justify; font-size:12pt; font-weight:bold; text-transform:uppercase; margin-top: 20px; margin-bottom: 10px; page-break-after: avoid;">${content.replace(/^## /, '')}</h2>`;
+        // Handle lettered lists a) b) c) d)
+        if (/([a-z]\))/i.test(content)) {
+            const items = content.split(/([a-z]\))/i);
+            let reconstructed = '';
+            let introductoryText = items[0].trim();
+            
+            if (introductoryText.length < 3) introductoryText = '';
+
+            for (let i = 1; i < items.length; i += 2) {
+                const marker = items[i];
+                let itemContent = items[i+1] || '';
+                itemContent = itemContent.replace(/^\s*[:,-]\s*/, '').trim();
+                if (marker && itemContent) {
+                    reconstructed += `<div style="margin-bottom: 12px; padding-left: 35px; text-indent: -25px; line-height: 1.6; text-align: justify; page-break-inside: avoid;"><strong>${marker.toLowerCase()}</strong> ${itemContent}</div>`;
+                }
+            }
+            
+            if (reconstructed) {
+                return `<div style="margin-bottom: 12px; text-align: justify; line-height: 1.6;">${introductoryText}</div>${reconstructed}`;
+            }
         }
 
-        // Bullet Lists
+        // Technical specs or bullet points with dashes "-"
         if (content.startsWith('- ') || content.startsWith('* ')) {
-            const listItems = content.split('\n').map(line => {
-                return `<li style="margin-bottom: 5px; text-align: justify;">${line.replace(/^[-*] /, '')}</li>`;
-            }).join('');
-            return `<ul style="list-style-type: disc; margin-left: 25px; text-align: justify; margin-bottom: 15px; page-break-inside: avoid;">${listItems}</ul>`;
+            const listItems = content.split('\n').filter(l => l.trim().length > 0).map(line => {
+                const textLine = line.replace(/^[-] /, '').replace(/^[*] /, '').trim();
+                if (!textLine) return '';
+                return `<li style="margin-bottom: 10px; text-align: justify; padding-left: 20px; text-indent: -18px;">- ${textLine}</li>`;
+            }).filter(Boolean).join('');
+            
+            return `<ul style="list-style-type: none; margin-left: 0; padding-left: 5px; text-align: justify; margin-bottom: 20px; page-break-inside: avoid;">
+                ${listItems}
+            </ul>`;
         }
 
-        // Standard Paragraphs - JUSTIFIED
-        // We replace single newlines within a paragraph with a space to let the browser justify the full block
-        const cleanContent = content.replace(/\n/g, ' ');
-        
-        // Detect headers like "PRIMERO:", "SEGUNDO:", etc. and make them bold+large
-        if (/^(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO PRIMERO):/.test(cleanContent)) {
-             return `<p style="text-align: justify; margin-bottom: 15px; line-height: 1.6; font-weight: bold; font-size: 12pt; text-transform: uppercase;">${cleanContent}</p>`;
+        // Clauses detection - Expanded list
+        const clausePatterns = [/^(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO PRIMERO|DECIMO SEGUNDO|DECIMO TERCERO):/];
+        for (const pattern of clausePatterns) {
+            const match = content.match(pattern);
+            if (match) {
+                const clause = match[1];
+                const rest = content.replace(`${clause}:`, '').trim();
+                return `<p style="text-align: justify; margin-bottom: 22px; line-height: 1.6;">
+                    <strong style="text-transform: uppercase; font-size: 11.5pt; text-decoration: underline;">${clause}:</strong> ${rest}
+                </p>`;
+            }
         }
 
-        return `<p style="text-align: justify; margin-bottom: 12px; line-height: 1.6; text-justify: inter-word; page-break-inside: auto;">${cleanContent}</p>`;
+        // Section "SR/A ... Y ... SR/A"
+        if (content.includes('SR/A') && content.includes(' Y ')) {
+            return `<div style="text-align: center; margin: 35px 0; font-size: 12pt; line-height: 1.8; font-weight: bold;">${content}</div>`;
+        }
+
+        return `<p style="text-align: justify; margin-bottom: 18px; line-height: 1.6; font-size: 10.5pt;">${content}</p>`;
     }).join('');
   };
 
@@ -513,15 +622,13 @@ const ContractManager: React.FC = () => {
     if(w) {
         // Use Snapshot if available, otherwise current DB data
         const client = contract.cliente_snapshot || clients.find(c => c.id === contract.cliente_id);
-        const vend = vendor; // Vendor usually static in this app, but could also be snapshot
-
-        // Construct layout strictly based on image provided by user
-        // Table with black borders
+        
         const signaturesTable = `
         <div class="signature-section">
           <table class="sig-table">
             <tr>
               <td class="sig-cell">
+                <div class="sig-label">EL VENDEDOR</div>
                 <div class="sig-header">
                   <span class="underline">COMERCIALIZADORA MADECAS SPA</span><br>
                   <span class="underline">EDUARDO HUMBERTO SOTO ALVARADO</span>
@@ -537,14 +644,15 @@ const ContractManager: React.FC = () => {
                 </div>
               </td>
               <td class="sig-cell">
+                <div class="sig-label">EL COMPRADOR</div>
                 <div class="sig-header">
-                  <span class="underline text-blue">${client?.nombre || 'CLIENTE'}</span>
+                  <span class="underline blue-text">${client?.nombre || 'CLIENTE'}</span>
                 </div>
-                <div class="sig-space" style="margin-top: 30px;">
+                <div class="sig-space" style="margin-top: 20px; min-height: 80px;">
                    ${contract.firma_cliente ? `<img src="${contract.firma_cliente}" class="sig-img" />` : ''}
                 </div>
                 <div class="sig-footer">
-                   R.U.T : <span class="text-blue">${client?.rut}</span>
+                   R.U.T : <span class="blue-text">${client?.rut}</span>
                 </div>
               </td>
             </tr>
@@ -552,158 +660,179 @@ const ContractManager: React.FC = () => {
         </div>
         `;
 
-        let htmlContent = formatTextToHtml(contract.contenido_texto);
-
-        // Encode graphics
-        const encodedLogo = 'data:image/svg+xml;base64,' + btoa(MADECAS_LOGO_HEADER_SVG);
-        const encodedWatermark = 'data:image/svg+xml;base64,' + btoa(MADECAS_LOGO_SVG);
-        const encodedFooter = 'data:image/svg+xml;base64,' + btoa(MADECAS_FOOTER_SVG);
+        let htmlContent = formatTextToHtml(contract.contenido_texto.replace(/FIRMAS[\s\S]*$/i, '').trim());
+        const logoToUse = getLogoFile();
+        const watermarkToUse = getWatermarkFile() || ('data:image/svg+xml;base64,' + btoa(MADECAS_LOGO_SVG));
 
         w.document.write(`
           <html>
             <head>
-              <title>Contrato ${contract.id.slice(0,6)}</title>
+              <title>${contract.id.slice(0, 6)}</title>
               <style>
                 @page { 
                     size: A4; 
-                    /* CRITICAL: Physical margins to prevent text overlapping with header/footer */
-                    margin-top: 35mm; 
-                    margin-bottom: 30mm; 
-                    margin-left: 20mm; 
-                    margin-right: 20mm; 
+                    margin: 0;
+                }
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    width: 210mm;
                 }
                 body { 
-                  font-family: 'Times New Roman', serif; 
+                  font-family: 'Times New Roman', Times, serif; 
                   color: #000; 
-                  -webkit-print-color-adjust: exact;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
                   background: white;
-                  margin: 0;
-                  padding: 0;
+                  padding: 25mm 25mm 45mm 25mm;
+                  line-height: 1.6;
+                  position: relative;
+                  box-sizing: border-box;
+                  min-height: 297mm;
                 }
                 
-                .bg-image {
+                .bg-mark {
                     position: fixed;
                     top: 0; left: 0;
-                    width: 100%; height: 100%;
+                    width: 210mm;
+                    height: 297mm;
                     object-fit: cover;
-                    opacity: 0.12; /* 20% softer than 0.16 for better text readability */
-                    filter: saturate(0.5) brightness(1.1);
+                    object-position: center;
+                    opacity: 0.15;
                     z-index: -20;
+                    pointer-events: none;
                 }
                 
-                /* Content Styles */
+                .document-header {
+                    display: flex;
+                    justify-content: flex-start;
+                    align-items: center;
+                    margin-bottom: 40px;
+                    position: relative;
+                    z-index: 10;
+                    padding-bottom: 15px;
+                }
+
+                .document-logo-header {
+                    width: 55mm;
+                    height: auto;
+                    margin-right: 20px;
+                }
+
+                .contract-title {
+                    text-align: center;
+                    font-size: 18pt;
+                    font-weight: bold;
+                    text-decoration: underline;
+                    flex: 1;
+                    margin-right: 55mm; /* To center between logo-width and right edge */
+                }
+                
                 .content {
                     position: relative;
                     z-index: 10;
                 }
 
-                .document-logo-start {
-                    display: block;
-                    margin: 0 auto 30px;
-                    width: 130mm;
-                    height: auto;
-                }
-
-                .document-logo-end {
-                    display: block;
-                    margin: 40px auto 0;
-                    width: 100%;
-                    max-width: 180mm;
-                    height: auto;
-                }
-
-                p { 
-                    margin-bottom: 12px; line-height: 1.6; 
-                    text-align: justify; text-justify: inter-word; font-size: 11.5pt;
-                    page-break-inside: auto;
-                    widows: 3; orphans: 3;
-                }
-                .page-counter {
-                    position: fixed;
-                    bottom: -15mm;
-                    right: 0;
-                    font-size: 9pt;
-                    color: #888;
-                    z-index: 150;
-                }
-                .page-counter:after {
-                    content: "Página " counter(page);
-                }
-                li { text-align: justify; text-justify: inter-word; page-break-inside: avoid; }
-                h1 { text-align: center; text-transform: uppercase; font-size: 14pt; margin-bottom: 20px; page-break-after: avoid; }
-                h2 { font-weight: bold; text-transform: uppercase; font-size: 12pt; margin-top: 20px; margin-bottom: 10px; text-align: justify; page-break-after: avoid; }
-                ul { page-break-inside: auto; }
-
-                /* Signature Table Styles */
+                h1 { text-align: center; text-transform: uppercase; font-size: 16pt; margin-bottom: 25px; text-decoration: underline; font-weight: bold; }
+                
+                p, li { text-align: justify; font-size: 10.5pt; margin-bottom: 12px; }
+                
                 .signature-section {
-                    margin-top: 100px;
-                    page-break-inside: avoid; /* Keep signatures together */
-                    width: 100%;
+                    margin-top: 40px;
+                    page-break-inside: avoid;
                 }
                 .sig-table {
                     width: 100%;
+                    border: 1pt solid #000;
                     border-collapse: collapse;
-                    border: 2px solid #000;
+                    background: rgba(255, 255, 255, 0.4);
                 }
                 .sig-cell {
                     width: 50%;
-                    border: 1px solid #000;
+                    height: 120px;
+                    border: 1pt solid #000;
+                    text-align: center;
                     vertical-align: top;
-                    padding: 0;
-                    position: relative;
+                    padding: 20px 10px;
                 }
-                .sig-header {
-                    text-align: center;
+                .sig-label {
                     font-weight: bold;
-                    padding: 10px 5px;
                     font-size: 10pt;
-                }
-                .sig-role {
-                    text-align: center;
-                    font-weight: bold;
-                    margin-top: 5px;
-                    font-size: 10pt;
-                }
-                .underline {
+                    margin-bottom: 15px;
                     text-decoration: underline;
                 }
-                .text-blue {
-                    color: blue;
-                }
-                .sig-space {
-                    height: 120px;
+                .sig-header { font-weight: bold; font-size: 9pt; margin-bottom: 5px; }
+                .sig-role { font-style: italic; font-size: 8pt; margin-bottom: 10px; }
+                .sig-img { max-height: 80px; margin: 5px 0; }
+                .sig-footer { font-size: 9pt; font-weight: bold; margin-top: 5px; }
+                
+                .footer-banner {
+                    position: fixed;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    height: 25mm;
+                    background: #1a3a1f; 
                     display: flex;
                     align-items: center;
                     justify-content: center;
+                    z-index: 50;
                 }
-                .sig-img {
-                    max-height: 100px;
-                    max-width: 90%;
+
+                .footer-banner img {
+                    height: 18mm;
+                    width: auto;
                 }
-                .sig-footer {
-                    border-top: 2px solid #000;
-                    text-align: center;
+
+                .page-number {
+                    position: fixed;
+                    bottom: 10mm;
+                    left: 10mm;
+                    font-size: 10pt;
                     font-weight: bold;
-                    padding: 5px;
-                    font-size: 11pt;
+                    color: white;
+                    z-index: 60;
                 }
+                .page-number::after {
+                    content: counter(page);
+                }
+
+                .blue-text { color: #0033bb; font-weight: bold; }
+                .underline { text-decoration: underline; }
               </style>
             </head>
             <body>
-              <div class="bg-image">
-                 <img src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&q=80&w=2000" style="width: 100%; height: 100%; object-fit: cover;" />
+              ${watermarkToUse && watermarkToUse.length > 100 ? `<img src="${watermarkToUse}" class="bg-mark" />` : ''}
+              
+              <div class="footer-banner">
+                 <div class="page-number"></div>
+                 <div style="color: white; font-family: sans-serif; font-weight: 900; font-size: 32pt; letter-spacing: 5px; text-align: center;">
+                    MADECAS
+                    <div style="font-size: 12pt; letter-spacing: 6px; text-transform: uppercase; opacity: 0.8; margin-top: -2px;">P R E F A B R I C A D O S</div>
+                 </div>
               </div>
-              <div class="page-counter"></div>
 
               <div class="content">
-                 ${getSafeInputFile('input_file_1') ? `<img src="${getSafeInputFile('input_file_1')}" class="document-logo-start" />` : `<div style="display:flex; justify-content:center; margin-bottom:30px;">${MADECAS_LOGO_HEADER_SVG}</div>`}
-                 ${htmlContent}
+                  <div class="document-header">
+                    ${logoToUse && logoToUse.length > 100 ? `<img src="${logoToUse}" class="document-logo-header" />` : '<div style="width: 52mm; font-weight: 900; font-size: 18pt;">MADECAS</div>'}
+                    <div class="contract-title">CONTRATO DE COMPRAVENTA</div>
+                  </div>
+                 
+                  <div style="margin-top: 20px;">
+                    ${htmlContent}
+                  </div>
+
                  ${signaturesTable}
-                 ${getSafeInputFile('input_file_0') ? `<img src="${getSafeInputFile('input_file_0')}" class="document-logo-end" />` : `<div style="margin-top:40px;">${MADECAS_FOOTER_SVG}</div>`}
               </div>
               
               <script>
-                window.onload = function() { setTimeout(function(){ window.print(); }, 800); }
+                document.title = "";
+                window.onload = function() { 
+                    setTimeout(function(){ 
+                        window.print(); 
+                        setTimeout(function(){ window.close(); }, 500);
+                    }, 1000); 
+                }
               </script>
             </body>
           </html>
@@ -955,6 +1084,36 @@ const ContractManager: React.FC = () => {
                 </button>
             </div>
 
+            {viewMode === 'preview' && (
+                <button 
+                  onClick={() => printContract({
+                    id: editingContractId || 'PRE-Borrador',
+                    cliente_id: selectedClient?.id || '',
+                    vendedor_id: vendor?.id || '',
+                    proyecto_id: selectedProject?.id || '',
+                    presupuesto_id: selectedBudget?.id || '',
+                    fecha_contrato: contractDate,
+                    monto_total: selectedBudget?.monto_total || 0,
+                    metodo_pago: metodoPago,
+                    cuotas_pago: payments.length,
+                    estado_pago: 'Pendiente',
+                    hitos_pago: payments,
+                    pautas_pago: payments.map(p => ({ ...p, pagado: false })),
+                    estado: ContractStatus.GENERATED,
+                    contenido_texto: generatedText,
+                    plazo_instalacion_dias: plazoInstalacion,
+                    fecha_inicio_obra: startDate,
+                    fecha_entrega_estimada: '',
+                    lugar_suscripcion: lugarSuscripcion,
+                    cliente_snapshot: selectedClient || undefined,
+                    es_anexo: isAnexo
+                  } as Contract)}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition shadow-sm font-bold animate-in bounce-in"
+                >
+                    <Printer size={16} /> Imprimir PDF
+                </button>
+            )}
+
             <div className="flex gap-2">
                  {generatedText && !generatedText.startsWith("Error") && (
                     <button onClick={downloadWord} className="p-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition" title="Descargar Word">
@@ -1033,12 +1192,12 @@ const ContractManager: React.FC = () => {
                                 onError={(e) => (e.currentTarget.style.display = 'none')}
                             />
                             
-                            {/* Round Logo at Start */}
+                            {/* Logo at Start */}
                             <div className="flex justify-center mb-10 relative z-10">
-                                 {getSafeInputFile('input_file_1') ? (
-                                    <img src={getSafeInputFile('input_file_1')} className="w-64 h-auto" alt="Logo Start" />
+                                 {getLogoFile() ? (
+                                    <img src={getLogoFile()} className="w-56 h-auto" alt="Logo Start" />
                                  ) : (
-                                    <div className="h-24 w-72" dangerouslySetInnerHTML={{ __html: MADECAS_LOGO_HEADER_SVG }} />
+                                    <div className="text-center py-4 border-b-2 border-slate-900 mb-6 font-serif italic text-2xl w-full">MADECAS</div>
                                  )}
                             </div>
 
@@ -1047,13 +1206,9 @@ const ContractManager: React.FC = () => {
                                 dangerouslySetInnerHTML={{ __html: formatTextToHtml(generatedText) }}
                             />
 
-                            {/* Green Logo at End */}
-                            <div className="mt-10 relative z-10 border-t pt-10">
-                                {getSafeInputFile('input_file_0') ? (
-                                    <img src={getSafeInputFile('input_file_0')} className="w-full h-auto rounded-lg shadow-sm" alt="Logo End" />
-                                ) : (
-                                    <div className="h-12 w-full" dangerouslySetInnerHTML={{ __html: MADECAS_FOOTER_SVG }} />
-                                )}
+                            {/* Brand line at End */}
+                            <div className="mt-10 relative z-10 border-t pt-10 text-center opacity-70">
+                                <span className="font-bold tracking-widest uppercase">Madecas Prefabricados</span>
                             </div>
 
                             {/* Pagination Placeholder */}

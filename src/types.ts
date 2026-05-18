@@ -16,6 +16,8 @@ export interface Client {
   correo: string;
   fecha_registro?: string; // Standardized ISO date
   vendedor_id?: string; // Linked seller UID
+  vendedor_nombre?: string; // Cache executive name for display
+  etapa_venta?: 'Registro' | 'Selección Modelo' | 'Personalización' | 'Cotización' | 'Negociación' | 'Cierre' | 'Postventa';
   location?: {
     lat: number;
     lng: number;
@@ -90,6 +92,8 @@ export interface Budget {
   medidas_radier?: { largo: number; ancho: number };
   es_modelo_fijo?: boolean;
   partidas_adicionales_permitidas?: boolean;
+  notas_personalizacion?: string;
+  observaciones_negociacion?: string;
 }
 
 export interface PaymentInstallment {
