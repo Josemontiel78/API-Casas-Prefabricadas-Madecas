@@ -27,13 +27,11 @@ const getLatestFiles = (): string[] => {
 
 const getLogoFile = (): string => {
   const files = getLatestFiles();
-  // Based on current input history, files[1] is likely the logo if background was last
   return files[1] || files[0] || '';
 };
 
 const getWatermarkFile = (): string => {
   const files = getLatestFiles();
-  // Using files[0] as the most recent upload (likely the background)
   return files[0] || '';
 };
 
@@ -560,17 +558,16 @@ const ContractManager: React.FC = () => {
         // Process bold markdown
         content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
-        // Handle lettered lists a) b) c) d)
-        if (/([a-z]\))/i.test(content)) {
-            const items = content.split(/([a-z]\))/i);
+        // Handle lettered lists a) b) c) d) ... to j)
+        if (/(^|\n)[a-j]\)/i.test(content)) {
+            const items = content.split(/(^|\n)([a-j]\))/i);
             let reconstructed = '';
             let introductoryText = items[0].trim();
             
-            if (introductoryText.length < 3) introductoryText = '';
-
-            for (let i = 1; i < items.length; i += 2) {
-                const marker = items[i];
-                let itemContent = items[i+1] || '';
+            for (let i = 1; i < items.length; i += 3) {
+                // items structure: [pre, newline_if_any, marker, itemContent, ...]
+                const marker = items[i+1];
+                let itemContent = (items[i+2] || '').trim();
                 itemContent = itemContent.replace(/^\s*[:,-]\s*/, '').trim();
                 if (marker && itemContent) {
                     reconstructed += `<div style="margin-bottom: 12px; padding-left: 35px; text-indent: -25px; line-height: 1.6; text-align: justify; page-break-inside: avoid;"><strong>${marker.toLowerCase()}</strong> ${itemContent}</div>`;
@@ -583,28 +580,73 @@ const ContractManager: React.FC = () => {
         }
 
         // Technical specs or bullet points with dashes "-"
-        if (content.startsWith('- ') || content.startsWith('* ')) {
-            const listItems = content.split('\n').filter(l => l.trim().length > 0).map(line => {
-                const textLine = line.replace(/^[-] /, '').replace(/^[*] /, '').trim();
-                if (!textLine) return '';
-                return `<li style="margin-bottom: 10px; text-align: justify; padding-left: 20px; text-indent: -18px;">- ${textLine}</li>`;
-            }).filter(Boolean).join('');
+        if (content.includes('\n- ') || content.startsWith('- ') || content.includes('\n* ') || content.startsWith('* ')) {
+            const lines = content.split('\n');
+            let intro = [];
+            let list = [];
+            let inList = false;
+
+            for (const line of lines) {
+                if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+                    inList = true;
+                    list.push(line.trim().replace(/^[-*] /, ''));
+                } else if (!inList) {
+                    intro.push(line);
+                } else {
+                    // If we were in list and found a non-list line, add to current list item or start new intro?
+                    // For contracts, usually it's intro then list.
+                    list[list.length - 1] += ' ' + line.trim();
+                }
+            }
+
+            const listHtml = list.map(item => `<li style="margin-bottom: 12px; text-align: justify; padding-left: 20px; text-indent: -18px;">- ${item}</li>`).join('');
+            const introHtml = intro.length > 0 ? `<div style="margin-bottom: 12px; text-align: justify;">${intro.join(' ')}</div>` : '';
             
-            return `<ul style="list-style-type: none; margin-left: 0; padding-left: 5px; text-align: justify; margin-bottom: 20px; page-break-inside: avoid;">
-                ${listItems}
-            </ul>`;
+            return `${introHtml}<ul style="list-style-type: none; margin-left: 0; padding-left: 10px; text-align: justify; margin-bottom: 22px; page-break-inside: avoid; line-height: 1.6;">${listHtml}</ul>`;
         }
 
-        // Clauses detection - Expanded list
+        // Clause detection with internal list support
         const clausePatterns = [/^(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO PRIMERO|DECIMO SEGUNDO|DECIMO TERCERO):/];
         for (const pattern of clausePatterns) {
             const match = content.match(pattern);
             if (match) {
-                const clause = match[1];
-                const rest = content.replace(`${clause}:`, '').trim();
-                return `<p style="text-align: justify; margin-bottom: 22px; line-height: 1.6;">
-                    <strong style="text-transform: uppercase; font-size: 11.5pt; text-decoration: underline;">${clause}:</strong> ${rest}
-                </p>`;
+                const clause = match[0];
+                let rest = content.substring(clause.length).trim();
+                
+                // If there's a list inside the clause rest
+                if (rest.includes('\n- ') || rest.includes('\n* ') || rest.match(/\n\d+\.\s/)) {
+                    const lines = rest.split('\n');
+                    let subIntro = [];
+                    let subList = [];
+                    let inSubList = false;
+                    let isNumbered = false;
+                    for (const line of lines) {
+                        const numberedMatch = line.trim().match(/^(\d+\.)\s*(.*)/);
+                        if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+                            inSubList = true;
+                            subList.push(line.trim().replace(/^[-*] /, ''));
+                        } else if (numberedMatch) {
+                            inSubList = true;
+                            isNumbered = true;
+                            subList.push(`<strong>${numberedMatch[1]}</strong> ${numberedMatch[2]}`);
+                        } else if (!inSubList) {
+                            subIntro.push(line);
+                        } else {
+                            subList[subList.length - 1] += ' ' + line.trim();
+                        }
+                    }
+                    const listHtml = subList.map(item => `<li style="margin-bottom: 12px; text-align: justify; padding-left: 20px; text-indent: -18px;">${isNumbered ? '' : '- '}${item}</li>`).join('');
+                    const introHtml = subIntro.length > 0 ? `<div style="margin-bottom: 12px;">${subIntro.join(' ')}</div>` : '';
+                    
+                    return `<div style="text-align: justify; margin-bottom: 22px; line-height: 1.6;">
+                        <strong style="text-transform: uppercase; font-size: 12pt; text-decoration: underline; font-weight: bold;">${clause}</strong> ${introHtml}
+                        <ul style="list-style-type: none; margin-left: 0; padding-left: 10px; text-align: justify; margin-top: 10px; page-break-inside: avoid;">${listHtml}</ul>
+                    </div>`;
+                }
+
+                return `<div style="text-align: justify; margin-bottom: 22px; line-height: 1.6;">
+                    <strong style="text-transform: uppercase; font-size: 12pt; text-decoration: underline; font-weight: bold;">${clause}</strong> ${rest}
+                </div>`;
             }
         }
 
@@ -623,37 +665,37 @@ const ContractManager: React.FC = () => {
         // Use Snapshot if available, otherwise current DB data
         const client = contract.cliente_snapshot || clients.find(c => c.id === contract.cliente_id);
         
+        // Dynamically compute the chronological serial/correlative number
+        const sorted = [...contracts].sort((a, b) => a.fecha_contrato.localeCompare(b.fecha_contrato));
+        const seqNum = sorted.findIndex(c => c.id === contract.id) + 1;
+        const seqText = String(seqNum > 0 ? seqNum : contracts.length + 1).padStart(3, '0');
+
         const signaturesTable = `
         <div class="signature-section">
           <table class="sig-table">
             <tr>
               <td class="sig-cell">
-                <div class="sig-label">EL VENDEDOR</div>
+                <div class="sig-type">EL VENDEDOR</div>
                 <div class="sig-header">
-                  <span class="underline">COMERCIALIZADORA MADECAS SPA</span><br>
-                  <span class="underline">EDUARDO HUMBERTO SOTO ALVARADO</span>
+                  INVERSIONES E&E SPA<br>
+                  EDUARDO HUMBERTO SOTO ALVARADO
                 </div>
-                <div class="sig-role">
-                  <span class="underline">Representante legal</span>
-                </div>
+                <div class="sig-role">Representante legal</div>
                 <div class="sig-space">
-                   ${contract.firma_vendedor ? `<img src="${contract.firma_vendedor}" class="sig-img" />` : ''}
+                   ${contract.firma_vendedor ? `<img src="${contract.firma_vendedor}" class="sig-img" />` : '<div style="height: 40px;"></div>'}
                 </div>
-                <div class="sig-footer">
-                  R.U.T.: 77.300.759-4
-                </div>
+                <div class="sig-footer">R.U.T.: 78.210.119-6</div>
               </td>
               <td class="sig-cell">
-                <div class="sig-label">EL COMPRADOR</div>
+                <div class="sig-type">EL COMPRADOR</div>
                 <div class="sig-header">
-                  <span class="underline blue-text">${client?.nombre || 'CLIENTE'}</span>
+                  ${client?.nombre ? client.nombre.toUpperCase() : 'CLIENTE'}
                 </div>
-                <div class="sig-space" style="margin-top: 20px; min-height: 80px;">
-                   ${contract.firma_cliente ? `<img src="${contract.firma_cliente}" class="sig-img" />` : ''}
+                <div class="sig-role">Comprador Titular</div>
+                <div class="sig-space">
+                   ${contract.firma_cliente ? `<img src="${contract.firma_cliente}" class="sig-img" />` : '<div style="height: 40px;"></div>'}
                 </div>
-                <div class="sig-footer">
-                   R.U.T : <span class="blue-text">${client?.rut}</span>
-                </div>
+                <div class="sig-footer">R.U.T : <span class="blue-text">${client?.rut || ''}</span></div>
               </td>
             </tr>
           </table>
@@ -661,136 +703,147 @@ const ContractManager: React.FC = () => {
         `;
 
         let htmlContent = formatTextToHtml(contract.contenido_texto.replace(/FIRMAS[\s\S]*$/i, '').trim());
-        const logoToUse = getLogoFile();
-        const watermarkToUse = getWatermarkFile() || ('data:image/svg+xml;base64,' + btoa(MADECAS_LOGO_SVG));
+        const watermarkToUse = getWatermarkFile(); // No fallback to logo SVG
 
         w.document.write(`
           <html>
             <head>
-              <title>${contract.id.slice(0, 6)}</title>
+              <title>Contrato N° ${seqText}</title>
               <style>
                 @page { 
                     size: A4; 
-                    margin: 0;
+                    margin: 0; 
+                }
+                @media print {
+                  @page { margin: 0; }
+                  body { 
+                    margin: 0 !important;
+                    padding: 38mm 25mm 30mm 25mm !important; /* Slightly smaller margins to fit more text */
+                    width: 210mm;
+                    box-sizing: border-box;
+                  }
+                  .no-print { display: none !important; }
                 }
                 html, body {
                     margin: 0;
                     padding: 0;
-                    width: 210mm;
+                    background: transparent !important;
+                    color: black !important;
                 }
                 body { 
                   font-family: 'Times New Roman', Times, serif; 
                   color: #000; 
                   -webkit-print-color-adjust: exact !important;
                   print-color-adjust: exact !important;
-                  background: white;
-                  padding: 25mm 25mm 45mm 25mm;
-                  line-height: 1.6;
+                  line-height: 1.4;
                   position: relative;
                   box-sizing: border-box;
-                  min-height: 297mm;
-                }
-                
-                .bg-mark {
-                    position: fixed;
-                    top: 0; left: 0;
-                    width: 210mm;
-                    height: 297mm;
-                    object-fit: cover;
-                    object-position: center;
-                    opacity: 0.15;
-                    z-index: -20;
-                    pointer-events: none;
-                }
-                
-                .document-header {
-                    display: flex;
-                    justify-content: flex-start;
-                    align-items: center;
-                    margin-bottom: 40px;
-                    position: relative;
-                    z-index: 10;
-                    padding-bottom: 15px;
-                }
-
-                .document-logo-header {
-                    width: 55mm;
-                    height: auto;
-                    margin-right: 20px;
-                }
-
-                .contract-title {
-                    text-align: center;
-                    font-size: 18pt;
-                    font-weight: bold;
-                    text-decoration: underline;
-                    flex: 1;
-                    margin-right: 55mm; /* To center between logo-width and right edge */
+                  width: 210mm;
+                  background: transparent !important;
                 }
                 
                 .content {
                     position: relative;
                     z-index: 10;
+                    background: transparent !important;
                 }
 
-                h1 { text-align: center; text-transform: uppercase; font-size: 16pt; margin-bottom: 25px; text-decoration: underline; font-weight: bold; }
+                h1 { text-align: center; text-transform: uppercase; font-size: 15pt; margin-bottom: 20px; text-decoration: underline; font-weight: bold; }
                 
-                p, li { text-align: justify; font-size: 10.5pt; margin-bottom: 12px; }
+                p, li { text-align: justify; font-size: 11pt; margin-bottom: 12px; background: transparent !important; }
+                
+                .bg-mark {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 210mm;
+                    height: 297mm;
+                    z-index: -10;
+                    object-fit: fill;
+                    pointer-events: none;
+                }
                 
                 .signature-section {
-                    margin-top: 40px;
+                    margin-top: 30px;
                     page-break-inside: avoid;
+                    break-before: auto;
                 }
                 .sig-table {
                     width: 100%;
-                    border: 1pt solid #000;
+                    border: 0.5pt solid #000;
                     border-collapse: collapse;
-                    background: rgba(255, 255, 255, 0.4);
+                    background: transparent;
+                    table-layout: fixed;
                 }
                 .sig-cell {
                     width: 50%;
-                    height: 120px;
                     border: 1pt solid #000;
                     text-align: center;
                     vertical-align: top;
-                    padding: 20px 10px;
+                    padding: 12px 10px;
+                    height: 175px; 
                 }
-                .sig-label {
+                .sig-type {
                     font-weight: bold;
-                    font-size: 10pt;
-                    margin-bottom: 15px;
+                    font-size: 11pt;
+                    margin-bottom: 8px;
                     text-decoration: underline;
+                    text-transform: uppercase;
+                    height: 18px;
                 }
-                .sig-header { font-weight: bold; font-size: 9pt; margin-bottom: 5px; }
-                .sig-role { font-style: italic; font-size: 8pt; margin-bottom: 10px; }
-                .sig-img { max-height: 80px; margin: 5px 0; }
-                .sig-footer { font-size: 9pt; font-weight: bold; margin-top: 5px; }
+                .sig-header { 
+                    font-weight: bold; 
+                    font-size: 8.5pt; 
+                    line-height: 1.2; 
+                    height: 28px; 
+                    display: flex; 
+                    flex-direction: column;
+                    justify-content: center; 
+                    align-items: center;
+                }
+                .sig-role { 
+                    font-style: italic; 
+                    font-size: 8pt; 
+                    height: 14px; 
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    margin-bottom: 4px;
+                }
+                .sig-space { 
+                    height: 55px; 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center; 
+                    margin: 4px 0;
+                    border-top: 1px dashed #eee;
+                    border-bottom: 1px dashed #eee;
+                }
+                .sig-img { 
+                    max-height: 50px; 
+                    max-width: 90%; 
+                    object-fit: contain;
+                }
+                .sig-footer { 
+                    font-size: 9.5pt; 
+                    font-weight: bold; 
+                    height: 18px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                }
                 
                 .footer-banner {
-                    position: fixed;
-                    bottom: 0;
-                    left: 0;
-                    right: 0;
-                    height: 25mm;
-                    background: #1a3a1f; 
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    z-index: 50;
-                }
-
-                .footer-banner img {
-                    height: 18mm;
-                    width: auto;
+                    display: none;
                 }
 
                 .page-number {
                     position: fixed;
-                    bottom: 10mm;
-                    left: 10mm;
+                    bottom: 12mm;
+                    right: 15mm;
                     font-size: 10pt;
                     font-weight: bold;
-                    color: white;
+                    color: #1a3a1f;
                     z-index: 60;
                 }
                 .page-number::after {
@@ -802,23 +855,9 @@ const ContractManager: React.FC = () => {
               </style>
             </head>
             <body>
-              ${watermarkToUse && watermarkToUse.length > 100 ? `<img src="${watermarkToUse}" class="bg-mark" />` : ''}
-              
-              <div class="footer-banner">
-                 <div class="page-number"></div>
-                 <div style="color: white; font-family: sans-serif; font-weight: 900; font-size: 32pt; letter-spacing: 5px; text-align: center;">
-                    MADECAS
-                    <div style="font-size: 12pt; letter-spacing: 6px; text-transform: uppercase; opacity: 0.8; margin-top: -2px;">P R E F A B R I C A D O S</div>
-                 </div>
-              </div>
-
+              ${watermarkToUse ? `<img src="${watermarkToUse}" class="bg-mark" />` : ''}
               <div class="content">
-                  <div class="document-header">
-                    ${logoToUse && logoToUse.length > 100 ? `<img src="${logoToUse}" class="document-logo-header" />` : '<div style="width: 52mm; font-weight: 900; font-size: 18pt;">MADECAS</div>'}
-                    <div class="contract-title">CONTRATO DE COMPRAVENTA</div>
-                  </div>
-                 
-                  <div style="margin-top: 20px;">
+                  <div style="margin-top: 0;">
                     ${htmlContent}
                   </div>
 
@@ -1180,45 +1219,36 @@ const ContractManager: React.FC = () => {
                   </div>
                 )}
 
-                {generatedText && (
-                    <div className="flex flex-col gap-8 pb-20 printable-area">
-                        <div className="paper-a4 animate-in zoom-in-95 duration-300">
-                             {/* Background Image softened but visible */}
-                            <img 
-                                src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&q=80&w=2000" 
-                                className="paper-bg-image" 
-                                style={{ opacity: 0.12, filter: 'saturate(0.5) brightness(1.1)' }}
-                                alt="Background"
-                                onError={(e) => (e.currentTarget.style.display = 'none')}
-                            />
-                            
-                            {/* Logo at Start */}
-                            <div className="flex justify-center mb-10 relative z-10">
-                                 {getLogoFile() ? (
-                                    <img src={getLogoFile()} className="w-56 h-auto" alt="Logo Start" />
-                                 ) : (
-                                    <div className="text-center py-4 border-b-2 border-slate-900 mb-6 font-serif italic text-2xl w-full">MADECAS</div>
-                                 )}
-                            </div>
+                 {generatedText && (() => {
+                     const sorted = [...contracts].sort((a, b) => a.fecha_contrato.localeCompare(b.fecha_contrato));
+                     const activeIdx = editingContractId 
+                         ? sorted.findIndex(c => c.id === editingContractId) + 1 
+                         : contracts.length + 1;
+                     const activeSeqText = String(activeIdx > 0 ? activeIdx : contracts.length + 1).padStart(3, '0');
 
-                            <div 
-                                className="contract-content text-[11.5pt] leading-relaxed relative z-10 flex-1"
-                                dangerouslySetInnerHTML={{ __html: formatTextToHtml(generatedText) }}
-                            />
-
-                            {/* Brand line at End */}
-                            <div className="mt-10 relative z-10 border-t pt-10 text-center opacity-70">
-                                <span className="font-bold tracking-widest uppercase">Madecas Prefabricados</span>
-                            </div>
-
-                            {/* Pagination Placeholder */}
-                            <div className="contract-page-footer relative z-10 mt-8">
-                                <div className="font-bold text-slate-400">MADECAS PREFABRICADOS</div>
-                                <div className="font-mono text-slate-400">Página 1 de 1</div>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                     return (
+                         <div className="flex flex-col gap-8 pb-20 printable-area">
+                             <div className="paper-a4 animate-in zoom-in-95 duration-300 relative">
+                                  {/* Background Image */}
+                                  {getWatermarkFile() && (
+                                     <img 
+                                         src={getWatermarkFile()} 
+                                         className="paper-bg" 
+                                         alt="Background" 
+                                     />
+                                  )}
+                                  {/* Serial Number */}
+                                  <div className="absolute top-[32mm] right-[25mm] text-[11pt] font-serif font-bold text-slate-800 z-20">
+                                      N° {activeSeqText}
+                                  </div>
+                                 <div 
+                                     className="contract-content text-[11.5pt] leading-relaxed relative z-10 flex-1"
+                                     dangerouslySetInnerHTML={{ __html: formatTextToHtml(generatedText) }}
+                                 />
+                             </div>
+                         </div>
+                     );
+                 })()}
               </div>
             )}
           </div>
@@ -1301,31 +1331,42 @@ const ContractManager: React.FC = () => {
                 <p className="text-slate-400 text-sm mt-1">Genera el primer contrato usando el botón superior.</p>
              </div>
         )}
-        {contracts.map(contract => {
-            // Use snapshot if available, otherwise fallback to current data (backward compatibility)
-            const cli = contract.cliente_snapshot || clients.find(c => c.id === contract.cliente_id);
-            const isSigned = contract.estado === ContractStatus.SIGNED;
-            
-            return (
-                <div key={contract.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-6 group">
-                    <div className="flex items-start gap-4">
-                        <div className={`mt-1 p-3 rounded-xl ${isSigned ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
-                            <FileText size={24} />
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-3">
-                                <h4 className="font-bold text-slate-800 text-lg">
-                                    {contract.es_anexo ? 'Anexo' : 'Contrato'} #{contract.id.slice(0,6)}
-                                </h4>
-                                {contract.es_anexo && (
-                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black rounded uppercase">Anexo de #{contract.parent_contract_id?.slice(0,6)}</span>
-                                )}
-                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
-                                    isSigned ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'
-                                }`}>
-                                    {contract.estado}
-                                </span>
-                            </div>
+        {(() => {
+          const sortedContracts = [...contracts].sort((a, b) => a.fecha_contrato.localeCompare(b.fecha_contrato));
+          return contracts.map(contract => {
+              // Use snapshot if available, otherwise fallback to current data (backward compatibility)
+              const cli = contract.cliente_snapshot || clients.find(c => c.id === contract.cliente_id);
+              const isSigned = contract.estado === ContractStatus.SIGNED;
+              
+              const seqNum = sortedContracts.findIndex(c => c.id === contract.id) + 1;
+              const seqText = String(seqNum).padStart(3, '0');
+
+              let parentSeqText = '';
+              if (contract.es_anexo && contract.parent_contract_id) {
+                  const pIdx = sortedContracts.findIndex(c => c.id === contract.parent_contract_id) + 1;
+                  if (pIdx > 0) parentSeqText = String(pIdx).padStart(3, '0');
+              }
+              
+              return (
+                  <div key={contract.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-6 group">
+                      <div className="flex items-start gap-4">
+                          <div className={`mt-1 p-3 rounded-xl ${isSigned ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                              <FileText size={24} />
+                          </div>
+                          <div>
+                              <div className="flex items-center gap-3">
+                                  <h4 className="font-bold text-slate-800 text-lg">
+                                      {contract.es_anexo ? 'Anexo' : 'Contrato'} N° {seqText}
+                                  </h4>
+                                  {contract.es_anexo && parentSeqText && (
+                                      <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black rounded uppercase">Anexo de N° {parentSeqText}</span>
+                                  )}
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+                                      isSigned ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'
+                                  }`}>
+                                      {contract.estado}
+                                  </span>
+                              </div>
                             <p className="text-sm text-slate-500 mt-1 flex items-center gap-2">
                                 <span className="font-semibold text-slate-700">{cli?.nombre || 'Desconocido'}</span> • Emitido el {contract.fecha_contrato}
                             </p>
@@ -1479,8 +1520,9 @@ const ContractManager: React.FC = () => {
                         </div>
                     )}
                 </div>
-            );
-        })}
+              );
+          });
+        })()}
       </div>
     </div>
   );

@@ -1,10 +1,18 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc, deleteDoc, onSnapshot, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, doc, setDoc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Using initializeFirestore with settings to enable long polling
+// This is often more reliable in proxy/iframe environments where WebSockets might be blocked
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+  // Using the databaseId from config if present
+  // @ts-ignore - firestoreDatabaseId is a custom property in our config
+}, firebaseConfig.firestoreDatabaseId || '(default)');
+
 export const auth = getAuth(app);
 
 export enum OperationType {
@@ -53,29 +61,18 @@ async function testConnection() {
     console.log("FIRESTORE CONNECTION TEST");
     console.log("Project:", firebaseConfig.projectId);
     console.log("Database:", firebaseConfig.firestoreDatabaseId || '(default)');
-    console.log("Timestamp:", new Date().toISOString());
     
-    // Attempt a direct read from a special test doc
+    // Attempt a direct read from a special test doc to verify server reachability
     const testDoc = doc(db, 'test', 'connection');
     await getDocFromServer(testDoc);
     
-    // Attempt a write to "force" activation if it's the first time
-    await setDoc(testDoc, { connected: true, lastUpdate: new Date().toISOString() }, { merge: true });
-    
-    console.log("SUCCESS: Connected to Firestore and verified write access.");
+    console.log("SUCCESS: Connected to Firestore.");
     console.log("-----------------------------------------");
   } catch (error: any) {
-    console.error("-----------------------------------------");
-    console.error("FIRESTORE CONNECTION FAILED!");
-    console.error("Error Code:", error?.code);
-    console.error("Error Message:", error?.message);
-    
-    if (error?.message?.includes('permission')) {
-      console.error("DIAGNOSIS: The security rules for this database might be denying access.");
-    } else if (error?.code === 'not-found' || error?.message?.includes('not found')) {
-      console.error("DIAGNOSIS: The database ID provided might not exist in this project.");
+    if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('unavailable'))) {
+      console.error("Please check your Firebase configuration or network. Firestore backend is currently unreachable.");
     }
-    
+    console.error("Firestore test failed:", error?.message);
     console.log("-----------------------------------------");
   }
 }

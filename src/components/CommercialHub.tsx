@@ -91,16 +91,35 @@ const CommercialHub: React.FC = () => {
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight uppercase">Interoperabilidad</h2>
           <p className="text-slate-500 italic">Cruce de información experto basado en RUT / Nombre para toma de decisiones.</p>
         </div>
-        <div className="relative w-full md:w-96">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-          <input
-            id="hub-search"
-            type="text"
-            placeholder="Buscar por RUT o Nombre..."
-            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+        <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
+          <div className="relative w-full sm:w-64">
+            <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <select
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none appearance-none transition-all text-sm font-medium text-slate-700"
+              value={searchQuery}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSearchQuery(val);
+                if (val) handleSearch(val);
+              }}
+            >
+              <option value="">Seleccionar Cliente...</option>
+              {clients.map(c => (
+                <option key={c.id} value={c.rut}>{c.nombre} ({c.rut})</option>
+              ))}
+            </select>
+          </div>
+          <div className="relative w-full md:w-96">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+            <input
+              id="hub-search"
+              type="text"
+              placeholder="Buscar por RUT o Nombre..."
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
