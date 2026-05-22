@@ -89,7 +89,8 @@ const ContractManager: React.FC = () => {
       const budgetM2 = selectedBudget.superficie_m2 || 0;
       
       if (budgetM2 > 0 && Math.abs(projectM2 - budgetM2) > 0.01) {
-        setM2Warning(`Diferencia de m² detectada: El modelo (${selectedProject.modelo}) es de ${projectM2}m², pero el presupuesto indica ${budgetM2}m². El contrato se generará con la superficie del presupuesto.`);
+        const modelName = selectedProject.modelo || (selectedProject as any).nombre || 'Personalizada';
+        setM2Warning(`Diferencia de m² detectada: El modelo (${modelName}) es de ${projectM2}m², pero el presupuesto indica ${budgetM2}m². El contrato se generará con la superficie del presupuesto.`);
       } else {
         setM2Warning(null);
       }
@@ -188,6 +189,31 @@ const ContractManager: React.FC = () => {
         return;
     }
 
+    const partsC = contractDate.split('-');
+    const partsS = startDate.split('-');
+    let dateC = new Date();
+    if (partsC.length === 3) {
+      dateC = new Date(parseInt(partsC[0], 10), parseInt(partsC[1], 10) - 1, parseInt(partsC[2], 10));
+    } else {
+      dateC = new Date(contractDate);
+    }
+    let dateS = new Date();
+    if (partsS.length === 3) {
+      dateS = new Date(parseInt(partsS[0], 10), parseInt(partsS[1], 10) - 1, parseInt(partsS[2], 10));
+    } else {
+      dateS = new Date(startDate);
+    }
+
+    dateC.setHours(0, 0, 0, 0);
+    dateS.setHours(0, 0, 0, 0);
+
+    if (dateS <= dateC) {
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+            detail: { message: 'La fecha de inicio de obra debe ser posterior a la fecha del contrato.', type: 'error' } 
+        }));
+        return;
+    }
+
     if (!isTotalValid) {
       window.dispatchEvent(new CustomEvent('app-notification', { 
             detail: { message: `Los porcentajes suman ${totalPercentage}%. Deben sumar exactamente 100%.`, type: 'error' } 
@@ -211,22 +237,34 @@ const ContractManager: React.FC = () => {
             isAnexo
         );
         
-        const dateObj = new Date(contractDate);
+        const contractParts = contractDate.split('-');
+        let dateObj: Date;
+        if (contractParts.length === 3) {
+            dateObj = new Date(parseInt(contractParts[0], 10), parseInt(contractParts[1], 10) - 1, parseInt(contractParts[2], 10));
+        } else {
+            dateObj = new Date(contractDate);
+        }
         const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
         const dateStringLiteral = `${dateObj.getDate()} de ${months[dateObj.getMonth()]} de ${dateObj.getFullYear()}`;
         const dateShort = `${dateObj.getMonth() + 1}/${dateObj.getDate()}/${dateObj.getFullYear()}`;
         
         let finalText = text;
         if (finalText.includes('[FECHA_LARGA]')) {
-            finalText = finalText.replace('[FECHA_LARGA]', `${dateShort} ${dateStringLiteral}`);
+            finalText = finalText.replaceAll('[FECHA_LARGA]', `${dateShort} ${dateStringLiteral}`);
         } else if (finalText.includes('[FECHA]')) {
-             finalText = finalText.replace('[FECHA]', `${dateShort} ${dateStringLiteral}`);
+             finalText = finalText.replaceAll('[FECHA]', `${dateShort} ${dateStringLiteral}`);
         }
         
         if (finalText.includes('[FECHA_INICIO]')) {
-            const startObj = new Date(startDate);
+            const startParts = startDate.split('-');
+            let startObj: Date;
+            if (startParts.length === 3) {
+                startObj = new Date(parseInt(startParts[0], 10), parseInt(startParts[1], 10) - 1, parseInt(startParts[2], 10));
+            } else {
+                startObj = new Date(startDate);
+            }
             const startString = `${startObj.getDate()} de ${months[startObj.getMonth()]} de ${startObj.getFullYear()}`;
-            finalText = finalText.replace('[FECHA_INICIO]', startString);
+            finalText = finalText.replaceAll('[FECHA_INICIO]', startString);
         }
 
         if (text.startsWith("Error de conexión con IA")) {
@@ -257,14 +295,56 @@ const ContractManager: React.FC = () => {
         }));
         return;
     }
+
+    if (!startDate) {
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+            detail: { message: 'Debe ingresar la fecha de inicio de obra', type: 'error' } 
+        }));
+        return;
+    }
+
+    const partsC = contractDate.split('-');
+    const partsS = startDate.split('-');
+    let dateC = new Date();
+    if (partsC.length === 3) {
+      dateC = new Date(parseInt(partsC[0], 10), parseInt(partsC[1], 10) - 1, parseInt(partsC[2], 10));
+    } else {
+      dateC = new Date(contractDate);
+    }
+    let dateS = new Date();
+    if (partsS.length === 3) {
+      dateS = new Date(parseInt(partsS[0], 10), parseInt(partsS[1], 10) - 1, parseInt(partsS[2], 10));
+    } else {
+      dateS = new Date(startDate);
+    }
+
+    dateC.setHours(0, 0, 0, 0);
+    dateS.setHours(0, 0, 0, 0);
+
+    if (dateS <= dateC) {
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+            detail: { message: 'La fecha de inicio de obra debe ser posterior a la fecha del contrato.', type: 'error' } 
+        }));
+        return;
+    }
     
-    const deliveryDate = new Date(startDate);
+    let deliveryDate: Date;
+    if (partsS.length === 3) {
+        deliveryDate = new Date(parseInt(partsS[0], 10), parseInt(partsS[1], 10) - 1, parseInt(partsS[2], 10));
+    } else {
+        deliveryDate = new Date(startDate);
+    }
     let addedDays = 0;
     while (addedDays < plazoInstalacion) {
         deliveryDate.setDate(deliveryDate.getDate() + 1);
         const day = deliveryDate.getDay();
         if (day !== 0 && day !== 6) addedDays++; // Mon-Fri
     }
+
+    const deliveryYear = deliveryDate.getFullYear();
+    const deliveryMonth = String(deliveryDate.getMonth() + 1).padStart(2, '0');
+    const deliveryDay = String(deliveryDate.getDate()).padStart(2, '0');
+    const deliveryDateStr = `${deliveryYear}-${deliveryMonth}-${deliveryDay}`;
 
     // Create or update the contract record with SNAPSHOTS
     const contractData: Contract = {
@@ -286,7 +366,7 @@ const ContractManager: React.FC = () => {
       // Plazos y Fechas
       plazo_instalacion_dias: plazoInstalacion,
       fecha_inicio_obra: startDate,
-      fecha_entrega_estimada: deliveryDate.toISOString().split('T')[0],
+      fecha_entrega_estimada: deliveryDateStr,
       lugar_suscripcion: lugarSuscripcion,
       
       cliente_snapshot: selectedClient,
@@ -350,8 +430,21 @@ const ContractManager: React.FC = () => {
     setEditingContractId(null);
     setSelectedBudgetId(contract.presupuesto_id || '');
     
-    // Copy existing data but mark as annex
-    setGeneratedText(`ANEXO DE CONTRATO\n\nEste documento constituye un ANEXO al contrato #${contract.id.slice(0,6)} celebrado el día ${contract.fecha_contrato}.\n\nMODIFICACIONES:\n1. [Describir cambio en presupuesto/alcance]\n2. [Describir cambio en plazos]\n\nLAS PARTES ratifican el resto de las cláusulas del contrato principal.\n\n${contract.contenido_texto}`);
+    const sortedContracts = [...contracts].sort((a, b) => a.fecha_contrato.localeCompare(b.fecha_contrato));
+    const parentIdx = sortedContracts.findIndex(c => c.id === contract.id) + 1;
+    const parentSeqText = parentIdx > 0 ? String(parentIdx).padStart(3, '0') : '';
+
+    // Copy existing data but mark as annex with formal template
+    setGeneratedText(`ANEXO AL CONTRATO DE COMPRAVENTA N° ${parentSeqText}
+
+Este documento constituye un ANEXO al contrato principal N° ${parentSeqText} celebrado el día ${contract.fecha_contrato}.
+
+Las partes de mutuo acuerdo convienen e incorporan bajo el amparo de la legislación chilena vigente, las siguientes modificaciones técnicas y/o adicionales al contrato principal:
+
+1. [Describir cambio en presupuesto/alcance/especificaciones]
+2. [Describir cambio en plazos/pagos]
+
+Se deja constancia que las presentes especificaciones pasan a formar parte integra del contrato de compraventa individualizado precedentemente. Se mantiene plenamente vigente todo lo no expresamente modificado por el presente instrumento, firmándose dos ejemplares del mismo tenor y fecha.`);
     
     setContractDate(new Date().toISOString().split('T')[0]);
     setStartDate(contract.fecha_inicio_obra || '');
@@ -534,9 +627,7 @@ const ContractManager: React.FC = () => {
             { regex: /((\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+(\d{4}))/gi, replacement: '<strong class="blue-text">$1</strong>' },
             { regex: /(\$\s?\d{1,3}(\.\d{3})*(,\d+)?( \(.*?\))?)/g, replacement: '<strong class="blue-text">$1</strong>' },
             { regex: /(INVERSIONES E&E SPA|INVERSIONES E&E)/g, replacement: '<strong>$1</strong>' },
-            { regex: /(SR\/A|don \(a\))\s+([A-ZÁÉÍÓÚÑ\s]{5,})/g, replacement: '$1 <strong class="blue-text underline">$2</strong>' },
-            // Highlight specific clauses and bullet start
-            { regex: /^(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO PRIMERO|DECIMO SEGUNDO|DECIMO TERCERO):/m, replacement: '<strong style="text-decoration: underline;">$1:</strong>' }
+            { regex: /(SR\/A|don \(a\))\s+([A-ZÁÉÍÓÚÑ\s]{5,})/g, replacement: '$1 <strong class="blue-text underline">$2</strong>' }
         ];
 
         let processedText = text;
@@ -549,6 +640,11 @@ const ContractManager: React.FC = () => {
     return parts.map(part => {
         let content = part.trim();
         if (!content) return '';
+
+        // Strip markdown bold markers, headers, or asterisks if they surround a clause name at the start
+        content = content.replace(/^\s*\*\*(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SEPTIEMO|SÉPTIMO|OCTAVO|NOVENO|DECIMO|DÉCIMO|DECIMO PRIMERO|DÉCIMO PRIMERO|DECIMO SEGUNDO|DECIMO TERCERO)\s*:\*\*/i, '$1:');
+        content = content.replace(/^\s*\*\*(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SEPTIEMO|SÉPTIMO|OCTAVO|NOVENO|DECIMO|DÉCIMO|DECIMO PRIMERO|DÉCIMO PRIMERO|DECIMO SEGUNDO|DECIMO TERCERO)\*\*\s*:/i, '$1:');
+        content = content.replace(/^\s*###\s*(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SEPTIEMO|SÉPTIMO|OCTAVO|NOVENO|DECIMO|DÉCIMO|DECIMO PRIMERO|DÉCIMO PRIMERO|DECIMO SEGUNDO|DECIMO TERCERO)\s*:/i, '$1:');
 
         // Headers
         if (content.startsWith('# ')) {
@@ -570,7 +666,7 @@ const ContractManager: React.FC = () => {
                 let itemContent = (items[i+2] || '').trim();
                 itemContent = itemContent.replace(/^\s*[:,-]\s*/, '').trim();
                 if (marker && itemContent) {
-                    reconstructed += `<div style="margin-bottom: 12px; padding-left: 35px; text-indent: -25px; line-height: 1.6; text-align: justify; page-break-inside: avoid;"><strong>${marker.toLowerCase()}</strong> ${itemContent}</div>`;
+                    reconstructed += `<div style="margin-bottom: 12px; padding-left: 35px; text-indent: -25px; line-height: 1.6; text-align: justify;"><strong>${marker.toLowerCase()}</strong> ${itemContent}</div>`;
                 }
             }
             
@@ -602,16 +698,16 @@ const ContractManager: React.FC = () => {
             const listHtml = list.map(item => `<li style="margin-bottom: 12px; text-align: justify; padding-left: 20px; text-indent: -18px;">- ${item}</li>`).join('');
             const introHtml = intro.length > 0 ? `<div style="margin-bottom: 12px; text-align: justify;">${intro.join(' ')}</div>` : '';
             
-            return `${introHtml}<ul style="list-style-type: none; margin-left: 0; padding-left: 10px; text-align: justify; margin-bottom: 22px; page-break-inside: avoid; line-height: 1.6;">${listHtml}</ul>`;
+            return `${introHtml}<ul style="list-style-type: none; margin-left: 0; padding-left: 10px; text-align: justify; margin-bottom: 22px; line-height: 1.6;">${listHtml}</ul>`;
         }
 
         // Clause detection with internal list support
-        const clausePatterns = [/^(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO PRIMERO|DECIMO SEGUNDO|DECIMO TERCERO):/];
+        const clausePatterns = [/^\s*(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SEPTIEMO|SÉPTIMO|OCTAVO|NOVENO|DECIMO|DÉCIMO|DECIMO PRIMERO|DÉCIMO PRIMERO|DECIMO SEGUNDO|DECIMO TERCERO)\s*:/i];
         for (const pattern of clausePatterns) {
             const match = content.match(pattern);
             if (match) {
-                const clause = match[0];
-                let rest = content.substring(clause.length).trim();
+                const clause = match[0].trim();
+                let rest = content.substring(match[0].length).trim();
                 
                 // If there's a list inside the clause rest
                 if (rest.includes('\n- ') || rest.includes('\n* ') || rest.match(/\n\d+\.\s/)) {
@@ -639,13 +735,13 @@ const ContractManager: React.FC = () => {
                     const introHtml = subIntro.length > 0 ? `<div style="margin-bottom: 12px;">${subIntro.join(' ')}</div>` : '';
                     
                     return `<div style="text-align: justify; margin-bottom: 22px; line-height: 1.6;">
-                        <strong style="text-transform: uppercase; font-size: 12pt; text-decoration: underline; font-weight: bold;">${clause}</strong> ${introHtml}
-                        <ul style="list-style-type: none; margin-left: 0; padding-left: 10px; text-align: justify; margin-top: 10px; page-break-inside: avoid;">${listHtml}</ul>
+                        <strong style="text-transform: uppercase; font-size: 11.5pt; text-decoration: underline; font-weight: bold;">${clause}</strong> ${introHtml}
+                        <ul style="list-style-type: none; margin-left: 0; padding-left: 10px; text-align: justify; margin-top: 10px;">${listHtml}</ul>
                     </div>`;
                 }
 
                 return `<div style="text-align: justify; margin-bottom: 22px; line-height: 1.6;">
-                    <strong style="text-transform: uppercase; font-size: 12pt; text-decoration: underline; font-weight: bold;">${clause}</strong> ${rest}
+                    <strong style="text-transform: uppercase; font-size: 11.5pt; text-decoration: underline; font-weight: bold;">${clause}</strong> ${rest}
                 </div>`;
             }
         }
@@ -669,6 +765,21 @@ const ContractManager: React.FC = () => {
         const sorted = [...contracts].sort((a, b) => a.fecha_contrato.localeCompare(b.fecha_contrato));
         const seqNum = sorted.findIndex(c => c.id === contract.id) + 1;
         const seqText = String(seqNum > 0 ? seqNum : contracts.length + 1).padStart(3, '0');
+        const fullCleanText = contract.contenido_texto.replace(/FIRMAS[\s\S]*$/i, '').trim();
+        const paragraphs = fullCleanText.split(/\n\n+/);
+        
+        let bodyHtml = '';
+        let lastPartHtml = '';
+        
+        if (paragraphs.length > 1) {
+            const bodyParts = paragraphs.slice(0, -1);
+            const lastPart = paragraphs[paragraphs.length - 1];
+            bodyHtml = formatTextToHtml(bodyParts.join('\n\n'));
+            lastPartHtml = formatTextToHtml(lastPart);
+        } else {
+            bodyHtml = '';
+            lastPartHtml = formatTextToHtml(fullCleanText);
+        }
 
         const signaturesTable = `
         <div class="signature-section">
@@ -689,6 +800,7 @@ const ContractManager: React.FC = () => {
               <td class="sig-cell">
                 <div class="sig-type">EL COMPRADOR</div>
                 <div class="sig-header">
+                  COMPRADOR TITULAR<br>
                   ${client?.nombre ? client.nombre.toUpperCase() : 'CLIENTE'}
                 </div>
                 <div class="sig-role">Comprador Titular</div>
@@ -702,7 +814,6 @@ const ContractManager: React.FC = () => {
         </div>
         `;
 
-        let htmlContent = formatTextToHtml(contract.contenido_texto.replace(/FIRMAS[\s\S]*$/i, '').trim());
         const watermarkToUse = getWatermarkFile(); // No fallback to logo SVG
 
         w.document.write(`
@@ -712,14 +823,14 @@ const ContractManager: React.FC = () => {
               <style>
                 @page { 
                     size: A4; 
-                    margin: 0; 
+                    margin: 38mm 25mm 30mm 25mm; 
                 }
                 @media print {
-                  @page { margin: 0; }
+                  @page { margin: 38mm 25mm 30mm 25mm; }
                   body { 
                     margin: 0 !important;
-                    padding: 38mm 25mm 30mm 25mm !important; /* Slightly smaller margins to fit more text */
-                    width: 210mm;
+                    padding: 0 !important;
+                    width: 100% !important;
                     box-sizing: border-box;
                   }
                   .no-print { display: none !important; }
@@ -738,7 +849,7 @@ const ContractManager: React.FC = () => {
                   line-height: 1.4;
                   position: relative;
                   box-sizing: border-box;
-                  width: 210mm;
+                  width: 100%;
                   background: transparent !important;
                 }
                 
@@ -748,14 +859,19 @@ const ContractManager: React.FC = () => {
                     background: transparent !important;
                 }
 
+                .content p, .content li, .content div, .content ul {
+                    page-break-inside: auto !important;
+                    break-inside: auto !important;
+                }
+
                 h1 { text-align: center; text-transform: uppercase; font-size: 15pt; margin-bottom: 20px; text-decoration: underline; font-weight: bold; }
                 
                 p, li { text-align: justify; font-size: 11pt; margin-bottom: 12px; background: transparent !important; }
                 
                 .bg-mark {
                     position: fixed;
-                    top: 0;
-                    left: 0;
+                    top: -38mm;
+                    left: -25mm;
                     width: 210mm;
                     height: 297mm;
                     z-index: -10;
@@ -764,9 +880,9 @@ const ContractManager: React.FC = () => {
                 }
                 
                 .signature-section {
-                    margin-top: 30px;
+                    margin-top: 25px;
                     page-break-inside: avoid;
-                    break-before: auto;
+                    break-inside: avoid;
                 }
                 .sig-table {
                     width: 100%;
@@ -782,6 +898,7 @@ const ContractManager: React.FC = () => {
                     vertical-align: top;
                     padding: 12px 10px;
                     height: 175px; 
+                    box-sizing: border-box;
                 }
                 .sig-type {
                     font-weight: bold;
@@ -794,27 +911,22 @@ const ContractManager: React.FC = () => {
                 .sig-header { 
                     font-weight: bold; 
                     font-size: 8.5pt; 
-                    line-height: 1.2; 
+                    line-height: 1.3; 
                     height: 28px; 
-                    display: flex; 
-                    flex-direction: column;
-                    justify-content: center; 
-                    align-items: center;
+                    text-align: center;
                 }
                 .sig-role { 
                     font-style: italic; 
                     font-size: 8pt; 
                     height: 14px; 
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
+                    text-align: center;
+                    margin-top: 4px;
                     margin-bottom: 4px;
                 }
                 .sig-space { 
                     height: 55px; 
-                    display: flex; 
-                    align-items: center; 
-                    justify-content: center; 
+                    text-align: center;
+                    line-height: 55px;
                     margin: 4px 0;
                     border-top: 1px dashed #eee;
                     border-bottom: 1px dashed #eee;
@@ -823,14 +935,14 @@ const ContractManager: React.FC = () => {
                     max-height: 50px; 
                     max-width: 90%; 
                     object-fit: contain;
+                    display: inline-block;
+                    vertical-align: middle;
                 }
                 .sig-footer { 
                     font-size: 9.5pt; 
                     font-weight: bold; 
                     height: 18px;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
+                    text-align: center;
                 }
                 
                 .footer-banner {
@@ -839,8 +951,8 @@ const ContractManager: React.FC = () => {
 
                 .page-number {
                     position: fixed;
-                    bottom: 12mm;
-                    right: 15mm;
+                    bottom: -18mm;
+                    right: -10mm;
                     font-size: 10pt;
                     font-weight: bold;
                     color: #1a3a1f;
@@ -858,10 +970,16 @@ const ContractManager: React.FC = () => {
               ${watermarkToUse ? `<img src="${watermarkToUse}" class="bg-mark" />` : ''}
               <div class="content">
                   <div style="margin-top: 0;">
-                    ${htmlContent}
+                    ${bodyHtml}
                   </div>
 
-                 ${signaturesTable}
+                  <div style="margin-top: 25px;">
+                    ${lastPartHtml}
+                  </div>
+
+                  <div class="signature-section">
+                    ${signaturesTable}
+                  </div>
               </div>
               
               <script>
@@ -898,10 +1016,11 @@ const ContractManager: React.FC = () => {
               <option value="">-- Seleccionar una cotización --</option>
               {budgets.map(b => {
                 const c = clients.find(cl => cl.id === b.cliente_id);
-                const p = projects.find(pr => pr.id === b.proyecto_id);
+                const p = projects.find(pr => pr.id === b.proyecto_id) || houseModels.find(hm => hm.id === b.proyecto_id);
+                const modelName = p?.modelo || (p as any)?.nombre || 'Personalizada';
                 return (
                   <option key={b.id} value={b.id}>
-                    {c?.nombre || 'S/N'} - {p?.modelo || 'Personalizada'} (${b.monto_total.toLocaleString()})
+                    {c?.nombre || 'S/N'} - {modelName} (${b.monto_total.toLocaleString()})
                   </option>
                 );
               })}
@@ -915,7 +1034,7 @@ const ContractManager: React.FC = () => {
                 </div>
                 <div className="flex justify-between border-b border-orange-100 pb-1">
                   <span className="text-slate-500">Proyecto:</span>
-                  <span className="font-bold text-slate-800">{selectedProject.modelo}</span>
+                  <span className="font-bold text-slate-800">{selectedProject.modelo || (selectedProject as any).nombre || 'Personalizada'}</span>
                 </div>
 
                 {m2Warning && (

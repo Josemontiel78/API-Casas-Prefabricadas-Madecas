@@ -31,6 +31,116 @@ const extractJSON = (text: string) => {
   }
 };
 
+export const numberToSpanishWords = (num: number): string => {
+  if (num === 0) return "cero";
+  
+  const rules = [
+    { value: 1000000, t_sing: "un millón", t_plur: "millones" },
+    { value: 1000, t_sing: "mil", t_plur: "mil" }
+  ];
+
+  const getHundreds = (n: number): string => {
+    const units = ["", "un", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve"];
+    const tens = ["", "diez", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
+    const teens = ["diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve"];
+    const hundreds = ["", "cien", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "nevecienos"]; // "nevecienos" or "novecientos" -> let's use standard "novecientos"
+    
+    let res = "";
+    const h = Math.floor(n / 100);
+    const t = Math.floor((n % 100) / 10);
+    const u = n % 10;
+
+    if (h > 0) {
+      if (h === 1 && t === 0 && u === 0) {
+        res += "cien";
+      } else if (h === 1) {
+        res += "ciento";
+      } else if (h === 5) {
+        res += "quinientos";
+      } else if (h === 7) {
+        res += "setecientos";
+      } else if (h === 9) {
+        res += "novecientos";
+      } else {
+        res += hundreds[h];
+      }
+    }
+
+    if (t > 0 || u > 0) {
+      if (res) res += " ";
+      if (t === 1) {
+        res += teens[u];
+      } else if (t === 2) {
+        if (u === 0) res += "veinte";
+        else {
+          if (u === 1) res += "veintiún";
+          else res += "veinti" + units[u];
+        }
+      } else if (t > 2) {
+        res += tens[t];
+        if (u > 0) {
+          res += " y " + (u === 1 ? "un" : units[u]);
+        }
+      } else {
+        res += (u === 1 ? "un" : units[u]);
+      }
+    }
+    return res;
+  };
+
+  let remainder = num;
+  let textParts = [];
+
+  for (const rule of rules) {
+    const part = Math.floor(remainder / rule.value);
+    remainder %= rule.value;
+
+    if (part > 0) {
+      if (part === 1) {
+        textParts.push(rule.t_sing);
+      } else {
+        textParts.push(`${getHundreds(part)} ${rule.t_plur}`);
+      }
+    }
+  }
+
+  if (remainder > 0) {
+    textParts.push(getHundreds(remainder));
+  }
+
+  return textParts.join(" ").trim();
+};
+
+export const getBusinessDaysLaterDateString = (startDateStr: string, days: number): string => {
+  let date = new Date();
+  if (startDateStr) {
+    const parts = startDateStr.split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      date = new Date(year, month, day);
+    } else {
+      const parsed = Date.parse(startDateStr);
+      if (!isNaN(parsed)) {
+        date = new Date(parsed);
+      }
+    }
+  }
+  
+  let count = 0;
+  while (count < days) {
+    date.setDate(date.getDate() + 1);
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      count++;
+    }
+  }
+  
+  const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  return `${String(date.getDate()).padStart(2, '0')} de ${months[date.getMonth()]} de ${date.getFullYear()}`;
+};
+
 export const getLocalContractFallback = (
   client: Client, 
   vendor: Vendor, 
@@ -42,6 +152,8 @@ export const getLocalContractFallback = (
   lugarSuscripcion: string, 
   isAnexo: boolean
 ): string => {
+  const rawModelName = project?.modelo || (project as any)?.nombre || 'Personalizada';
+  const uppercaseModelName = rawModelName.toUpperCase();
   const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   const today = new Date();
   const dateStringLiteral = `${today.getDate()} de ${months[today.getMonth()]} de ${today.getFullYear()}`;
@@ -50,23 +162,56 @@ export const getLocalContractFallback = (
     ? budget.detalle_items.map(item => `- ${item.descripcion.toUpperCase()}`).join('\n')
     : `- PISO: RADIER, DE CEMENTO CON ENFIERRADURA CADENA PERIMETRAL 15/20, CAPA DE POLIETILENO COMO AISLANTE DE HUMEDAD, ARRANQUES SANITARIOS EN BAÑOS Y COCINA\n- PANELES EXTERIORES MADERA 2X3, MEMBRANA HIDROFUGA, REVESTIMIENTO PERSONALIZADO.\n- PANELES INTERIORES MADERA 2X3 y REVESTIMIENTO UNA CARA VOLCANITA 15MM EN PAREDES DIVISORAS\n- CERCHAS MADERA 1X4\n- COSTANERAS PINO 2X2\n- ZINC ONDULADO NATURAL 0.35 PARA TECHUMBRE\n- PUERTAS DE ACCESO\n- KIT VENTANAS LINEA AMERICANA\n- ADICIONALES SOLICITADOS SI: ☒ NO: ☐\n- VENTANAS TERMO toda la casa: $280.000.-`;
 
-  const paymentList = payments && payments.length > 0
-    ? payments.map((p, i) => `${String.fromCharCode(97 + i)}) ${p.descripcion}: $${p.monto.toLocaleString()} (${p.porcentaje}%)`).join('\n')
-    : `a) En este acto, se recibe el monto correspondiente al 30% del total en transferencia bancaria.\nb) El monto correspondiente al 30% se hará efectivo con la entrega del radier.\nc) El monto correspondiente al 30% se pagará al momento de la entrega de paneles y cerchas.\nd) El monto correspondiente al 10% final será cancelado 5 días hábiles después de la entrega.`;
+  const totalInWords = numberToSpanishWords(budget.monto_total);
+  const totalString = `$${budget.monto_total.toLocaleString('es-CL')} (${totalInWords} pesos chilenos)`;
 
-  const totalString = `$${budget.monto_total.toLocaleString()}`;
+  const formatPaymentInWords = (p: PaymentInstallment, index: number) => {
+    const letter = String.fromCharCode(100 + index); // Starts with 'd'
+    const montoText = `$${p.monto.toLocaleString('es-CL')}`;
+    const wordsText = `${numberToSpanishWords(p.monto)} pesos chilenos`;
+    
+    if (index === 0) {
+      return `${letter}) En este acto, se recibe el monto correspondiente al ${p.porcentaje} % del total del proyecto por un valor de ${montoText} (${wordsText}) en Transferencia bancaria a Cuenta Corriente 0-000-9960580-4 del Banco Santander, que el vendedor recibe a su entera satisfacción.`;
+    } else if (index === 1) {
+      return `${letter}) El monto correspondiente al ${p.porcentaje}% del valor del proyecto, por un valor de ${montoText} (${wordsText}) se hará efectivo en el avance ENTREGA DE RADIER CON ARRANQUES SANITARIOS INCLUÍDOS.`;
+    } else if (index === 2) {
+      return `${letter}) El monto correspondiente al ${p.porcentaje}% del valor del proyecto, por un precio de ${montoText} (${wordsText}) se pagará al momento de entrega de PANELES Y CERCHAS INSTALADAS.`;
+    } else if (index === 3) {
+      return `${letter}) El monto correspondiente al ${p.porcentaje}% final del valor del proyecto, ${montoText} (${wordsText}) será cancelado a más tardar 5 días hábiles después de la entrega del proyecto contratado.`;
+    } else {
+      return `${letter}) El monto correspondiente al ${p.porcentaje}% (${p.descripcion}), por un valor de ${montoText} (${wordsText}) se pagará según las condiciones acordadas.`;
+    }
+  };
+
+  let paymentList = '';
+  if (payments && payments.length > 0) {
+    paymentList = payments.map((p, i) => formatPaymentInWords(p, i)).join('\n');
+    const nextLetter1 = String.fromCharCode(100 + payments.length);
+    const nextLetter2 = String.fromCharCode(100 + payments.length + 1);
+    paymentList += `\n${nextLetter1}) A modo de incentivo de compra el traslado del proyecto es SIN COSTO para el COMPRADOR`;
+    paymentList += `\n${nextLetter2}) Nota: No se aceptará el cheque como medio de pago para cancelar. Los valores detallados incluyen IVA.`;
+  } else {
+    paymentList = `d) En este acto, se recibe el monto correspondiente al 30 % del total del proyecto por un valor de $2.331.000 (dos millones trescientos treinta y un mil pesos chilenos) en Transferencia bancaria a Cuenta Corriente 0-000-9960580-4 del Banco Santander, que el vendedor recibe a su entera satisfacción.
+e) El monto correspondiente al 30% del valor del proyecto, por un valor de $2.331.000 (dos millones trescientos treinta y un mil pesos chilenos) se hará efectivo en el avance ENTREGA DE RADIER CON ARRANQUES SANITARIOS INCLUÍDOS.
+f) El monto correspondiente al 30% del valor del proyecto, por un precio de $2.331.000 (dos millones trescientos treinta y un mil pesos chilenos) se pagará al momento de entrega de PANELES Y CERCHAS INSTALADAS.
+g) El monto correspondiente al 10% final del valor del proyecto, $777.000 (setecientos setenta y siete mil pesos chilenos) será cancelado a más tardar 5 días hábiles después de la entrega del proyecto contratado.
+h) A modo de incentivo de compra el traslado del proyecto es SIN COSTO para el COMPRADOR
+i) Nota: No se aceptará el cheque como medio de pago para cancelar. Los valores detallados incluyen IVA.`;
+  }
+
+  const finalDateString = getBusinessDaysLaterDateString(startDate, plazoInstalacion);
 
   if (isAnexo) {
     return `ANEXO AL CONTRATO DE COMPRAVENTA
 INVERSIONES E&E SPA Y ${client.nombre.toUpperCase()}
 
-En Osorno, a ${dateStringLiteral}, se acuerda el presente Anexo al Contrato de Compraventa celebrado entre INVERSIONES E&E, del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por SR EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2 TELEFONO: +569 7777 00 22, domiciliado en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Ciudad de Osorno, comuna de Osorno, X REGION, en adelante "EL VENDEDOR", por una parte; y, por la otra, don (a) ${client.nombre.toUpperCase()} RUT ${client.rut}, DOMICILIADO EN ${client.domicilio.toUpperCase()}, TELÉFONO ${client.telefono}, CORREO ELECTRONICO: ${client.correo}, en adelante "EL COMPRADOR".
+En Osorno, a ${dateStringLiteral}, se acuerda el presente Anexo al Contrato de Compraventa celebrado entre INVERSIONES E&E, del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por SR EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2 TELEFONO: +569 7777 00 22, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Ciudad de Osorno, comuna de Osorno, X REGION, en adelante "EL VENDEDOR", por una parte; y, por la otra, don (a) ${client.nombre.toUpperCase()} RUT ${client.rut}, DOMICILIADO EN ${client.domicilio.toUpperCase()}, TELÉFONO ${client.telefono}, CORREO ELECTRONICO: ${client.correo}, en adelante "EL COMPRADOR".
 
-Las partes acuerdan incorporar las siguientes especificaciones técnicas y modificaciones adicionales de mutuo acuerdo al contrato principal de fecha [FECHA_INICIO]:
+Las partes de mutuo acuerdo convienen e incorporan bajo el amparo de la legislación chilena vigente, las siguientes especificaciones técnicas y/o modificaciones adicionales al contrato principal celebrado el día [FECHA_INICIO]:
 
 ${specList}
 
-Se mantiene plenamente vigente todo lo no expresamente modificado por el presente instrumento, firmándose dos ejemplares del mismo tenor y fecha.`;
+Se deja constancia que las presentes especificaciones pasan a formar parte integra del contrato de compraventa individualizado precedentemente. Se mantiene plenamente vigente todo lo no expresamente modificado por el presente instrumento, firmándose dos ejemplares del mismo tenor y fecha en Osorno.`;
   }
 
   return `CONTRATO DE COMPRAVENTA
@@ -74,7 +219,7 @@ INVERSIONES E&E SPA Y ${client.nombre.toUpperCase()}
 
 En Osorno, a ${dateStringLiteral}, entre INVERSIONES E&E , del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por SR EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2 TELEFONO: +569 7777 00 22, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Ciudad de Osorno, comuna de Osorno, X REGION, en adelante “EL VENDEDOR”, por una parte; y , por la otra, don (a) ${client.nombre.toUpperCase()} RUT ${client.rut} , DOMICILIADO EN ${client.domicilio.toUpperCase()}, TELÉFONO ${client.telefono}, CORREO ELECTRONICO: ${client.correo}, en adelante “EL COMPRADOR”, han convenido en celebrar el siguiente Contrato de Compraventa:
 
-PRIMERO: EL VENDEDOR es dueño del proyecto DE UNA CASA MODELO ${project.modelo.toUpperCase()} ${project.superficie_m2} M2 EL CUAL SERÁ ADQUIRIDO POR EL COMPRADOR PARA SER INSTALADO EN TERRENO DE SU PROPIEDAD, UBICADO EN SU DOMICILIO.
+PRIMERO: EL VENDEDOR es dueño del proyecto DE UNA CASA MODELO ${uppercaseModelName} ${project.superficie_m2} M2 EL CUAL SERÁ ADQUIRIDO POR EL COMPRADOR PARA SER INSTALADO EN TERRENO DE SU PROPIEDAD, UBICADO EN SU DOMICILIO.
 
 El proyecto se ajustará estrictamente a las siguientes especificaciones técnicas:
 
@@ -84,32 +229,38 @@ Del mismo el COMPRADOR declara:
 - Estar en conocimiento de las características del proyecto y los materiales a utilizar.
 - Haber visitado presencialmente un similar al proyecto señalado, conocer sus características y terminaciones, o en su defecto haber recibido información o planos del proyecto señalado, conociendo sus características externas e internas, tanto como las terminaciones de este.
 - Estar en conocimiento de que el servicio señalado no incluye la generación ni trámite de permisos de ninguna especie (construcción, luz, agua, redes sanitarias, etc.), los cuales son de exclusiva responsabilidad del COMPRADOR una vez se le sea entregado el proyecto.
-- Estar en conocimiento de que la compraventa señalada que solicita a través de este instrumento, se entrega bajo las condiciones ofrecidas y conocidas por el COMPRADOR, y no responde a la obligación de ajustarse a características exigidas por otros organismos públicos o privados para fines particulares, salvo las características estructurales de construcción acordes a la normativa vigente para este tipo de edificaciones, y siempre considerando un proceso de instalación correcto por parte del VENDEDOR.
+- Estar en conocimiento de que la compraventa señalada que solicita a través de este instrumento, se entrega bajo las condiciones ofrecidas y conocidas por el COMPRADOR, y no responde a la obligación de ajustarse a características exigidas por otros organismos públicos o privados para fines particulares, salvo las características estructurales de construcción acordes a la normativa vigente para este tipo de edificaciones, y siempre considerando un process de instalación correcto por parte del VENDEDOR.
 - Haber recibido y estar en conocimiento de los planos de distribución del proyecto.
 - Ser dueño del TERRENO en donde se llevará a cabo el servicio de INSTALACION o en su defecto contar con la autorización respectiva por parte del dueño.
 
 SEGUNDO: DE LAS OBLIGACIONES DEL COMPRADOR
 Por este acto el COMPRADOR se obliga a:
-a) Pagar el precio de INSTALACION DE PROYECTO CASA MODELO ${project.modelo.toUpperCase()} ${project.superficie_m2} M2 en las fechas y formas estipuladas en el presente contrato.
-b) Proporcionar al VENDEDOR, las condiciones necesarias básicas para la recepción de los materiales y demás insumos de proyecto en la fecha convenida; en especial el COMPRADOR debe proveer a la empresa de una entrada adecuada a las características del vehículo que realizará la descarga de MATERIALES, haber gestionado los permisos de paso de camión si se requiriesen, un terreno despejado y lo suficientemente plano para la descarga E INSTALACION de estos.
+a) Pagar el precio de INSTALACION DE PROYECTO CASA MODELO ${uppercaseModelName} ${project.superficie_m2} M2 en las fechas y formas estipuladas en el presente contrato.
+b) Proporcionar al VENDEDOR, las conditions necesarias básicas para la recepción de los materiales y demás insumos de proyecto en la fecha convenida; en especial el COMPRADOR debe proveer a la empresa de una entrada adecuada a las características del vehículo que realizará la descarga de MATERIALES, haber gestionado los permisos de paso de camión si se requiriesen, un terreno despejado y lo suficientemente plano para la descarga E INSTALACION de estos.
 c) Proporcionar para el montaje del proyecto un TERRENO de su propiedad o en su defecto acompañar al VENDEDOR con la autorización correspondiente del dueño del terreno para poder montar el proyecto en el lugar escogido al efecto. INVERSIONES E&E, no se hace responsable de aquellas contiendas con terceros derivadas de la ejecución del proyecto en terreno ajeno al COMPRADOR.
 d) Revisar las características del proyecto, materiales y demás insumos, una vez éstos se encuentren disponibles y previo a proceder a la descarga de estos.
 
 TERCERO: DE LAS CONDICIONES DE INSTALACIÓN Y TRANSPORTE
 El precio pactado incluye el transporte de los materiales hasta el lugar de instalación de mutuo acuerdo siempre que este tenga acceso apto para camiones pesados de carga de materiales. El comprador garantiza la libre accesibilidad descrita en el artículo anterior. Cualquier cargo adicional derivado de fletes especiales o transbordos no previstos será de cargo exclusivo del COMPRADOR.
 
-CUARTO: DE LAS OBLIGACIONES DEL VENDEDOR
+CUARTO: DE LAS OBLIGACIONES DEL VENDEDOR:
 Por este acto el VENDEDOR se obliga a:
 a) Entregar al COMPRADOR el SERVICIO contratado de acuerdo con las condiciones del contrato.
 b) Respetar los plazos de entrega estipulados en el presente contrato, salvo imprevistos de fuerza mayor o imposibles de prever por la empresa.
 c) Proporcionar al COMPRADOR toda la información requerida respecto del proyecto contratado.
 
-QUINTO: Por el presente instrumento INVERSIONES E&E, vende al COMPRADOR, la propiedad de los bienes MUEBLES señalados en la cláusula primera precedente, correspondientes a proyecto de CASA Modelo ${project.modelo.toUpperCase()} ${project.superficie_m2} M2, quien los compra y adquiere para sí.
+QUINTO: Por el presente instrumento INVERSIONES E&E, vende al COMPRADOR, la propiedad de los bienes MUEBLES señalados en la cláusula primera precedente, correspondientes a proyecto de CASA Modelo ${uppercaseModelName} ${project.superficie_m2} M2, quien los compra y adquiere para sí.
 
-SEXTO: El valor del proyecto es la suma de ${totalString} (Pesos Chilenos) Que del cual el COMPRADOR paga de la siguiente forma:
+SEXTO: El valor es la suma de ${totalString} Que el COMPRADOR paga de la siguiente forma:
 ${paymentList}
 
 SÉPTIMO: EL VENDEDOR se obliga a poner en terreno del COMPRADOR EL PERSONAL E INSUMOS para el servicio el DIA [FECHA_INICIO], pudiendo prorrogar dicho plazo, unilateralmente si las condiciones climáticas no permitieran el inicio de obra.
+
+Una vez el proyecto se encuentre en el terreno del EL COMPRADOR, INVERSIONES E&E, gozará de un plazo de hasta ${plazoInstalacion} DIAS HABILES para proceder al montaje de estos. Es decir, hasta el DIA ${finalDateString}. Dicho plazo contempla contar con las condiciones climáticas adecuadas.
+
+En caso de retardo, postergación de la entrega por razones técnicas, climáticas o de modificación del bien mueble a instalar y que el COMPRADOR decida modificar o postergar su recepción, no se considerará incumplimiento del VENDEDOR, desistiéndose el COMPRADOR desde ya de demandar o requerir indemnización de ninguna especie, incluyendo la compensatoria por retraso en finalización de obra.
+
+En caso de que el COMPRADOR decida cambiar su fecha de INICIO deberá avisar a la empresa con 15 días de anticipación, ya que ésta no se hará responsable por posibles daños o deterioros del proyecto.
 
 OCTAVO: Se deja constancia que, a fin de garantizar la venta, el COMPRADOR no podrá desistir de ella, por lo cual se establece una cláusula penal a favor del CONSTRUCTOR equivalente al 25% del valor total del servicio.
 
@@ -133,59 +284,45 @@ export const generateContractText = async (
 ): Promise<string> => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
+    
+    const rawModelName = project?.modelo || (project as any)?.nombre || 'Personalizada';
+    const uppercaseModelName = rawModelName.toUpperCase();
+    
+    // First generate the fallback so we have perfect baseline structures to feed as prompt template or use as fallback
+    const fallbackContractText = getLocalContractFallback(client, vendor, project, budget, payments, startDate, plazoInstalacion, lugarSuscripcion, isAnexo);
+    
     if (!apiKey) {
       console.warn("La API Key de Gemini no está configurada. Usando el generador local de contratos.");
-      return getLocalContractFallback(client, vendor, project, budget, payments, startDate, plazoInstalacion, lugarSuscripcion, isAnexo);
+      return fallbackContractText;
     }
 
     const ai = new GoogleGenAI({ apiKey });
+    
     const prompt = `
-      Genera un ${isAnexo ? 'ANEXO AL CONTRATO' : 'CONTRATO DE COMPRAVENTA'} formal y detallado siguiendo estrictamente este modelo para la empresa "INVERSIONES E&E SPA".
+      Genera un ${isAnexo ? 'ANEXO AL CONTRATO' : 'CONTRATO DE COMPRAVENTA'} formal y detallado siguiendo estrictamente el siguiente modelo de texto continuo para la empresa "INVERSIONES E&E SPA".
       
-      ENCABEZADO:
-      CONTRATO DE COMPRAVENTA
-      INVERSIONES E&E SPA Y ${client.nombre.toUpperCase()}
-      
-      DATOS DEL VENDEDOR:
-      - Empresa: INVERSIONES E&E SPA, Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6.
-      - Representante: SR EDUARDO HUMBERTO SOTO ALVARADO, RUT 15.272.818-2, TELEFONO: +569 7777 00 22.
-      - Domicilio: RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Ciudad de Osorno, comuna de Osorno, X REGION.
-      
-      DATOS DEL COMPRADOR (CLIENTE):
-      - Nombre: ${client.nombre}
-      - RUT: ${client.rut}
-      - Domicilio: ${client.domicilio}
-      - Teléfono: ${client.telefono}
-      - Correo: ${client.correo}
-      
-      DATOS DEL PROYECTO:
-      - Modelo de Casa: ${project.modelo}
+      Debes sustituir las variables de acuerdo a los datos entregados, pero DEBES mantener el resto del texto LEGAL EXACTO, VERBATIM Y COMPLETO sin omitir ningún párrafo ni palabra.
+
+      DATOS DE VARIABLES COMPRADOR:
+      - Nombre Comprador: ${client.nombre.toUpperCase()}
+      - RUT Comprador: ${client.rut}
+      - Domicilio Comprador: ${client.domicilio.toUpperCase()}
+      - Teléfono Comprador: ${client.telefono}
+      - Correo Comprador: ${client.correo}
+
+      DATOS DE VARIABLES PROYECTO:
+      - Modelo de Casa: ${uppercaseModelName}
       - Superficie: ${project.superficie_m2} m2
-      - Lugar de Instalación: Domicilio del comprador.
+      - Precio Total: $${budget.monto_total.toLocaleString('es-CL')} (${numberToSpanishWords(budget.monto_total)} pesos chilenos)
       
-      ESPECIFICACIONES TÉCNICAS (DEBEN LISTARSE EN LA CLÁUSULA PRIMERA):
-      ${budget.detalle_items.map(i => `- ${i.descripcion.toUpperCase()}`).join('\n')}
+      MODELO OBLIGATORIO DE TEXTO COMPLETO A RESPONDER:
+      ${fallbackContractText}
       
-      DATOS ECONÓMICOS:
-      - Precio Total: $${budget.monto_total.toLocaleString()}
-      
-      PLAZOS Y CONDICIONES:
-      - Fecha de Inicio: [FECHA_INICIO]
-      - Plazo de Instalación: ${plazoInstalacion} días hábiles.
-      - Lugar de Suscripción: ${lugarSuscripcion}
-      
-      ESTRUCTURA DE PAGOS (DEBE LISTARSE EN LA CLÁUSULA SEXTA):
-      ${payments.map((p, i) => `${String.fromCharCode(97 + i)}) ${p.descripcion}: $${p.monto.toLocaleString()} (${p.porcentaje}%)`).join('\n')}
-      
-      INSTRUCCIONES DE FORMATO:
-      - Usa cláusulas numeradas en mayúsculas (PRIMERO, SEGUNDO, TERCERO, CUARTO, QUINTO, SEXTO, SÉPTIMO, OCTAVO, NOVENO, DÉCIMO, DECIMO PRIMERO).
-      - La cláusula PRIMERO debe comenzar con "PRIMERO: EL VENDEDOR es dueño del proyecto...". 
-      - Las especificaciones técnicas DEBEN ir inmediatamente después del párrafo introductorio, cada una en una nueva línea comenzando con un guion (-).
-      - IMPORTANTE: Las listas detalladas dentro de las cláusulas (como en SEGUNDO, CUARTO, SEXTO) DEBEN SIEMPRE comenzar con la letra a), luego b), c), etc. NO empieces en d) ni uses otras letras arbitrarias.
-      - La cláusula SEXTO debe presentar el precio total primero, y luego, tras un salto de línea, empezar el desglose de pagos comenzando with "a) ...", "b) ...", etc.
-      - REGLA CRÍTICA: NO utilices letras solas seguidas de paréntesis (como "s)") a menos que sean marcadores de lista al inicio de una línea. Verifica que no aparezcan al final de oraciones o párrafos.
-      - El contrato debe ser formal, legal y coherente.
-      - NO incluyas secciones de firmas. El texto termina en la cláusula DÉCIMO PRIMERO.
+      REGLAS CRÍTICAS DE RESPUESTA:
+      1. Devuelve SOLO el texto completo del contrato generado de acuerdo al modelo obligatorio suministrado. No agregues introducciones, ni comentarios, ni bloques de código de markdown como \`\`\` o similares.
+      2. No omitas ningún párrafo, especialmente los tres párrafos explicativos que se ubican entre SÉPTIMO y OCTAVO. Deben aparecer tal cual están descritos.
+      3. No agregues sección de firmas al final.
+      4. No uses otra letra o formato en SEXTO que d), e), f), g), h), i).
     `;
 
     const response = await ai.models.generateContent({
@@ -193,7 +330,7 @@ export const generateContractText = async (
       contents: [{ parts: [{ text: prompt }] }],
     });
 
-    return response.text || "Error al generar el texto del contrato.";
+    return response.text || fallbackContractText;
   } catch (error: any) {
     console.error("Error in generateContractText:", error);
     return getLocalContractFallback(client, vendor, project, budget, payments, startDate, plazoInstalacion, lugarSuscripcion, isAnexo);
