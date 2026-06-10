@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import Layout from '@/components/Layout';
 import ClientManager from '@/components/ClientManager';
 import ProjectManager from '@/components/ProjectManager';
@@ -60,14 +61,17 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout 
-      currentView={currentView} 
-      setView={setCurrentView}
-      role={role}
-      setRole={setRole}
-    >
-      {renderContent()}
-    </Layout>
+    <>
+      <Layout 
+        currentView={currentView} 
+        setView={setCurrentView}
+        role={role}
+        setRole={setRole}
+      >
+        {renderContent()}
+      </Layout>
+      <Analytics />
+    </>
   );
 };
 
