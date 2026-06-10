@@ -13,6 +13,7 @@
     "@google/genai": "^1.30.0",
     "@tailwindcss/vite": "^4.2.4",
     "@types/leaflet": "^1.9.21",
+    "@vercel/analytics": "^2.0.1",
     "@vis.gl/react-google-maps": "^1.8.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
