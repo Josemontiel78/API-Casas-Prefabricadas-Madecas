@@ -1,7 +1,6 @@
-
-import React, { useEffect, useState } from 'react';
-import { getClients, getProjects, getBudgets, getContracts } from '@/services/db';
-import { Contract, Client, Project, Budget, ViewState } from '@/types';
+import React, { useEffect, useState, useMemo } from 'react';
+import { getClients, getProjects, getBudgets, getContracts, getUsers, subscribeToUsers } from '@/services/db';
+import { Contract, Client, Project, Budget, ViewState, SystemUser } from '@/types';
 import { 
   Users, 
   FolderOpen, 
@@ -17,7 +16,14 @@ import {
   Layers,
   AlertTriangle,
   UserPlus,
-  ArrowRight
+  ArrowRight,
+  UserCheck,
+  Award,
+  Filter,
+  CheckCircle2,
+  Mail,
+  Percent,
+  Download
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
@@ -31,7 +37,10 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  BarChart,
+  Bar,
+  Legend
 } from 'recharts';
 
 interface Warning {
@@ -43,7 +52,28 @@ interface Warning {
   refId: string;
 }
 
+interface UserSalesReport {
+  user: SystemUser;
+  clientsCount: number;
+  quotesCount: number;
+  contractsCount: number;
+  totalSalesVolume: number;
+  pendingQuotesVolume: number;
+  conversionRate: number;
+  targetAchievement: number;
+  estimatedCommission: number;
+}
+
 const Dashboard: React.FC = () => {
+  const [allClients, setAllClients] = useState<Client[]>([]);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const [allBudgets, setAllBudgets] = useState<Budget[]>([]);
+  const [allContracts, setAllContracts] = useState<Contract[]>([]);
+  const [allUsers, setAllUsers] = useState<SystemUser[]>([]);
+
+  // Selected Seller Filter
+  const [selectedUserId, setSelectedUserId] = useState<string>('todos');
+
   const [stats, setStats] = useState({
     totalClients: 0,
     activeProjects: 0,
@@ -59,234 +89,549 @@ const Dashboard: React.FC = () => {
   const [conversionData, setConversionData] = useState<any[]>([]);
   const [funnelData, setFunnelData] = useState<any[]>([]);
 
-  useEffect(() => {
-    const loadData = async () => {
-      const [clients, projects, budgets, contracts] = await Promise.all([
+  const loadData = async () => {
+    try {
+      const [clients, projects, budgets, contracts, users] = await Promise.all([
         getClients(),
         getProjects(),
         getBudgets(),
-        getContracts()
+        getContracts(),
+        getUsers()
       ]);
 
-      // Sales Funnel Data
-      const stages = [
-        'Registro', 
-        'Selección Modelo', 
-        'Personalización', 
-        'Cotización', 
-        'Negociación', 
-        'Cierre', 
-        'Postventa'
-      ];
-      
-      const funnelValues = stages.map(stage => ({
-        name: stage,
-        count: clients.filter(c => (c.etapa_venta || 'Registro') === stage).length
-      }));
+      setAllClients(clients);
+      setAllProjects(projects);
+      setAllBudgets(budgets);
+      setAllContracts(contracts);
+      setAllUsers(users);
+    } catch (err) {
+      console.error("Error loading dashboard data:", err);
+    }
+  };
 
-      const totalVolume = contracts.reduce((sum, c) => sum + (c.monto_total || 0), 0);
-      const pendingVolume = budgets.reduce((sum, b) => {
-          const isContracted = contracts.some(c => c.presupuesto_id === b.id);
-          return isContracted ? sum : sum + b.monto_total;
-      }, 0);
+  useEffect(() => {
+    loadData();
+    const unsub = subscribeToUsers((u) => setAllUsers(u));
+    return () => unsub();
+  }, []);
 
-      setStats({
-        totalClients: clients.length,
-        activeProjects: projects.length,
-        totalQuotes: budgets.length,
-        signedContracts: contracts.length,
-        totalVolume,
-        pendingVolume
-      });
+  // Compute stats dynamically whenever data or selectedUserId changes
+  useEffect(() => {
+    if (allClients.length === 0 && allBudgets.length === 0 && allContracts.length === 0) return;
 
-      setRecentContracts(contracts.slice(-5).reverse());
+    // Filter by selected user if not 'todos'
+    const filteredClients = selectedUserId === 'todos' 
+      ? allClients 
+      : allClients.filter(c => c.vendedor_id === selectedUserId || (c.vendedor_nombre && allUsers.find(u => u.id === selectedUserId)?.nombre === c.vendedor_nombre));
 
-      // Generate Warnings
-      const newWarnings: Warning[] = [];
-      const now = new Date();
+    const filteredBudgets = selectedUserId === 'todos'
+      ? allBudgets
+      : allBudgets.filter(b => b.vendedor_id === selectedUserId || filteredClients.some(c => c.id === b.cliente_id));
 
-      budgets.forEach(b => {
-        const isContracted = contracts.some(c => c.presupuesto_id === b.id);
-        if (!isContracted) {
-          const quoteDate = new Date(b.fecha);
-          const diffDays = Math.floor((now.getTime() - quoteDate.getTime()) / (1000 * 3600 * 24));
-          
-          if (diffDays >= 3) {
-            newWarnings.push({
-              id: `stale-${b.id}`,
-              type: 'stale',
-              title: 'Cotización Estancada',
-              message: `El cliente lleva ${diffDays} días sin cerrar su cotización de $${b.monto_total.toLocaleString()}.`,
-              severity: diffDays > 7 ? 'high' : 'medium',
-              refId: b.id
-            });
-          }
-        }
-      });
+    const filteredContracts = selectedUserId === 'todos'
+      ? allContracts
+      : allContracts.filter(c => c.vendedor_id === selectedUserId || filteredClients.some(cl => cl.id === c.cliente_id));
 
-      clients.forEach(c => {
-        const missingFields = [];
-        if (!c.correo) missingFields.push('Correo');
-        if (!c.telefono) missingFields.push('Teléfono');
-        if (!c.location) missingFields.push('Ubicación GPS');
+    // Sales Funnel Data
+    const stages = [
+      'Registro', 
+      'Selección Modelo', 
+      'Personalización', 
+      'Cotización', 
+      'Negociación', 
+      'Cierre', 
+      'Postventa'
+    ];
+    
+    const funnelValues = stages.map(stage => ({
+      name: stage,
+      count: filteredClients.filter(c => (c.etapa_venta || 'Registro') === stage).length
+    }));
 
-        if (missingFields.length > 0) {
+    const totalVolume = filteredContracts.reduce((sum, c) => sum + (c.monto_total || 0), 0);
+    const pendingVolume = filteredBudgets.reduce((sum, b) => {
+      const isContracted = filteredContracts.some(c => c.presupuesto_id === b.id);
+      return isContracted ? sum : sum + b.monto_total;
+    }, 0);
+
+    setStats({
+      totalClients: filteredClients.length,
+      activeProjects: allProjects.length,
+      totalQuotes: filteredBudgets.length,
+      signedContracts: filteredContracts.length,
+      totalVolume,
+      pendingVolume
+    });
+
+    setRecentContracts(filteredContracts.slice(-5).reverse());
+
+    // Generate Warnings
+    const newWarnings: Warning[] = [];
+    const now = new Date();
+
+    filteredBudgets.forEach(b => {
+      const isContracted = filteredContracts.some(c => c.presupuesto_id === b.id);
+      if (!isContracted) {
+        const quoteDate = new Date(b.fecha);
+        const diffDays = Math.floor((now.getTime() - quoteDate.getTime()) / (1000 * 3600 * 24));
+        
+        if (diffDays >= 3) {
           newWarnings.push({
-            id: `missing-${c.id}`,
-            type: 'missing_data',
-            title: 'Datos Incompletos',
-            message: `El cliente ${c.nombre} no tiene: ${missingFields.join(', ')}.`,
-            severity: 'medium',
-            refId: c.id
+            id: `stale-${b.id}`,
+            type: 'stale',
+            title: 'Cotización Estancada',
+            message: `El cliente lleva ${diffDays} días sin cerrar su cotización de $${b.monto_total.toLocaleString()}.`,
+            severity: diffDays > 7 ? 'high' : 'medium',
+            refId: b.id
           });
         }
-      });
+      }
+    });
 
-      setWarnings(newWarnings.sort((a, b) => {
-        const severityOrder = { high: 0, medium: 1, low: 2 };
-        return severityOrder[a.severity] - severityOrder[b.severity];
-      }));
+    filteredClients.forEach(c => {
+      const missingFields = [];
+      if (!c.correo) missingFields.push('Correo');
+      if (!c.telefono) missingFields.push('Teléfono');
+      if (!c.location) missingFields.push('Ubicación GPS');
+      if (!c.rol_propiedad) missingFields.push('Rol SII');
 
-      // Generate Chart Data (Last 6 months)
-      const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-      const last6Months = [];
-      const today = new Date();
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-        last6Months.push({
-          month: monthNames[d.getMonth()],
-          monthIdx: d.getMonth(),
-          year: d.getFullYear(),
-          ventas: 100, 
-          cotizado: 200, 
-          realVentas: 0,
-          realCotizado: 0
+      if (missingFields.length > 0) {
+        newWarnings.push({
+          id: `missing-${c.id}`,
+          type: 'missing_data',
+          title: 'Datos Incompletos',
+          message: `El cliente ${c.nombre} no tiene: ${missingFields.join(', ')}.`,
+          severity: 'medium',
+          refId: c.id
         });
       }
+    });
 
-      contracts.forEach(c => {
-        if (!c.fecha_contrato) return;
-        const d = new Date(c.fecha_contrato);
-        if (isNaN(d.getTime())) return;
-        const m = d.getMonth();
-        const y = d.getFullYear();
-        const point = last6Months.find(p => p.monthIdx === m && p.year === y);
-        if (point) {
-            point.ventas += c.monto_total;
-            point.realVentas += c.monto_total;
-        }
+    setWarnings(newWarnings.sort((a, b) => {
+      const severityOrder = { high: 0, medium: 1, low: 2 };
+      return severityOrder[a.severity] - severityOrder[b.severity];
+    }));
+
+    // Generate Chart Data (Last 6 months)
+    const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const last6Months = [];
+    const today = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      last6Months.push({
+        month: monthNames[d.getMonth()],
+        monthIdx: d.getMonth(),
+        year: d.getFullYear(),
+        ventas: 0, 
+        cotizado: 0, 
+        realVentas: 0,
+        realCotizado: 0
       });
+    }
 
-      budgets.forEach(b => {
-        if (!b.fecha) return;
-        const d = new Date(b.fecha);
-        if (isNaN(d.getTime())) return;
-        const m = d.getMonth();
-        const y = d.getFullYear();
-        const point = last6Months.find(p => p.monthIdx === m && p.year === y);
-        if (point) {
-            point.cotizado += b.monto_total;
-            point.realCotizado += b.monto_total;
-        }
-      });
+    filteredContracts.forEach(c => {
+      if (!c.fecha_contrato) return;
+      const d = new Date(c.fecha_contrato);
+      if (isNaN(d.getTime())) return;
+      const m = d.getMonth();
+      const y = d.getFullYear();
+      const point = last6Months.find(p => p.monthIdx === m && p.year === y);
+      if (point) {
+        point.ventas += c.monto_total;
+        point.realVentas += c.monto_total;
+      }
+    });
 
-      setChartData(last6Months);
-      setFunnelData(funnelValues);
+    filteredBudgets.forEach(b => {
+      if (!b.fecha) return;
+      const d = new Date(b.fecha);
+      if (isNaN(d.getTime())) return;
+      const m = d.getMonth();
+      const y = d.getFullYear();
+      const point = last6Months.find(p => p.monthIdx === m && p.year === y);
+      if (point) {
+        point.cotizado += b.monto_total;
+        point.realCotizado += b.monto_total;
+      }
+    });
 
-      // Conversion Data
-      const lost = Math.max(0, budgets.length - contracts.length);
-      setConversionData([
-        { name: 'Cerrados', value: contracts.length || 0, color: '#10b981' },
-        { name: 'En Proceso', value: lost || 0, color: '#f59e0b' }
-      ]);
-    };
+    setChartData(last6Months);
+    setFunnelData(funnelValues);
 
-    loadData();
-  }, []);
+    // Conversion Data
+    const lost = Math.max(0, filteredBudgets.length - filteredContracts.length);
+    setConversionData([
+      { name: 'Cerrados', value: filteredContracts.length || 0, color: '#10b981' },
+      { name: 'En Proceso', value: lost || 0, color: '#f59e0b' }
+    ]);
+  }, [allClients, allProjects, allBudgets, allContracts, allUsers, selectedUserId]);
+
+  // Aggregate User Sales Report for all registered users
+  const userSalesReports: UserSalesReport[] = useMemo(() => {
+    return allUsers.map(user => {
+      // Find clients linked to this user
+      const userClients = allClients.filter(c => c.vendedor_id === user.id || c.vendedor_nombre === user.nombre);
+      const userClientIds = new Set(userClients.map(c => c.id));
+
+      // Find contracts for this user
+      const userContracts = allContracts.filter(c => c.vendedor_id === user.id || userClientIds.has(c.cliente_id));
+      
+      // Find budgets for this user
+      const userBudgets = allBudgets.filter(b => b.vendedor_id === user.id || userClientIds.has(b.cliente_id));
+
+      const totalSalesVolume = userContracts.reduce((sum, c) => sum + (c.monto_total || 0), 0);
+      const pendingQuotesVolume = userBudgets.reduce((sum, b) => {
+        const isContracted = userContracts.some(c => c.presupuesto_id === b.id);
+        return isContracted ? sum : sum + b.monto_total;
+      }, 0);
+
+      const quotesCount = userBudgets.length;
+      const contractsCount = userContracts.length;
+      const conversionRate = quotesCount > 0 ? (contractsCount / quotesCount) * 100 : 0;
+      
+      const targetMonthly = user.meta_mensual_pesos || 50000000;
+      const targetAchievement = targetMonthly > 0 ? (totalSalesVolume / targetMonthly) * 100 : 0;
+      const commissionRate = (user.comision_porcentaje || 3) / 100;
+      const estimatedCommission = totalSalesVolume * commissionRate;
+
+      return {
+        user,
+        clientsCount: userClients.length,
+        quotesCount,
+        contractsCount,
+        totalSalesVolume,
+        pendingQuotesVolume,
+        conversionRate,
+        targetAchievement,
+        estimatedCommission
+      };
+    }).sort((a, b) => b.totalSalesVolume - a.totalSalesVolume);
+  }, [allUsers, allClients, allContracts, allBudgets]);
+
+  // User comparison chart data
+  const userBarChartData = useMemo(() => {
+    return userSalesReports.map(rep => ({
+      name: rep.user.nombre.split(' ')[0],
+      fullName: rep.user.nombre,
+      ventas: rep.totalSalesVolume / 1000000, // In Millions CLP
+      cotizado: rep.pendingQuotesVolume / 1000000,
+      contratos: rep.contractsCount
+    }));
+  }, [userSalesReports]);
 
   const handleManage = (warn: Warning) => {
     let view: ViewState = 'dashboard';
     switch (warn.type) {
-        case 'missing_data': 
-            view = 'clients'; 
-            window.localStorage.setItem('dash_trigger_client_id', warn.refId);
-            window.localStorage.setItem('dash_focus_field', 'telefono,correo,domicilio');
-            break;
-        case 'stale':
-        case 'pending_contract': 
-            view = 'budgets'; 
-            window.localStorage.setItem('dash_trigger_budget_id', warn.refId);
-            break;
-        default: view = 'dashboard';
+      case 'missing_data': 
+        view = 'clients'; 
+        window.localStorage.setItem('dash_trigger_client_id', warn.refId);
+        window.localStorage.setItem('dash_focus_field', 'telefono,correo,domicilio,rol_propiedad');
+        break;
+      case 'stale':
+      case 'pending_contract': 
+        view = 'budgets'; 
+        window.localStorage.setItem('dash_trigger_budget_id', warn.refId);
+        break;
+      default: view = 'dashboard';
     }
     window.dispatchEvent(new CustomEvent('app-view-change', { detail: view }));
   };
 
-  const EmptyChartNotice = ({ title }: { title: string }) => (
-    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] z-10 rounded-2xl">
-        <TrendingUp size={32} className="text-slate-300 mb-2" />
-        <p className="text-slate-600 font-bold">Datos Insuficientes</p>
-        <p className="text-slate-400 text-[10px] uppercase font-black tracking-widest mt-1">Genera ventas o cotizaciones para {title}</p>
-    </div>
-  );
-
-  const MetricCard = ({ title, value, sub, icon: Icon, color, trend }: any) => (
-    <motion.div 
-      whileHover={{ y: -4 }}
-      className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden"
-    >
-      <div className={cn("absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 opacity-5 rounded-full", color)}></div>
-      <div className="flex justify-between items-start mb-4">
-        <div className={cn("p-3 rounded-xl", color.replace('bg-', 'bg-opacity-10 text-'))}>
-          <Icon className="w-6 h-6" />
-        </div>
-        {trend && (
-            <div className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
-                <ArrowUpRight className="w-3 h-3" />
-                {trend}
-            </div>
-        )}
-      </div>
-      <div>
-        <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">{title}</p>
-        <h3 className="text-2xl font-black text-slate-800">{value}</h3>
-        <p className="text-slate-400 text-xs mt-1">{sub}</p>
-      </div>
-    </motion.div>
-  );
+  const selectedUserObj = allUsers.find(u => u.id === selectedUserId);
 
   return (
-    <div id="dashboard-monitor" className="space-y-8 animate-in fade-in duration-700 pb-12">
-      {/* Top Section: Sales Pipeline & Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden">
-          <div className="flex justify-between items-start mb-8">
-            <div>
-              <h3 className="text-2xl font-black text-slate-800 tracking-tight">Crecimiento Comercial</h3>
-              <p className="text-sm text-slate-500">Historial de ventas vs cotizaciones (últimos 6 meses)</p>
+    <div id="dashboard-monitor" className="space-y-8 animate-in fade-in duration-700 pb-16">
+      {/* Top Banner with User / Seller Filter */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+              <BarChart3 size={24} />
+            </span>
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight">Monitor Comercial & Reporte de Ventas</h2>
+          </div>
+          <p className="text-slate-500 text-xs font-medium">
+            Métricas de ventas globales y reporte detallado del desempeño por usuario / ejecutivo.
+          </p>
+        </div>
+
+        {/* Filter Dropdown */}
+        <div className="flex items-center gap-3 w-full md:w-auto bg-slate-50 p-2 rounded-2xl border border-slate-200">
+          <Filter size={16} className="text-emerald-600 ml-2 shrink-0" />
+          <div className="flex flex-col">
+            <span className="text-[9px] uppercase font-bold text-slate-400">Filtrar por Vendedor / Usuario:</span>
+            <select
+              value={selectedUserId}
+              onChange={(e) => setSelectedUserId(e.target.value)}
+              className="bg-transparent text-xs font-bold text-slate-800 outline-none pr-4 cursor-pointer py-0.5"
+            >
+              <option value="todos">🌐 Todos los Usuarios (Visión General)</option>
+              {allUsers.map(user => (
+                <option key={user.id} value={user.id}>
+                  👤 {user.nombre} ({user.cargo || user.rol})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Active User Filter Badge if filtered */}
+      {selectedUserId !== 'todos' && selectedUserObj && (
+        <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white font-black flex items-center justify-center">
+              {selectedUserObj.nombre.charAt(0)}
             </div>
-            <div className="flex flex-col items-end gap-1">
-                <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider">
-                  <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500"></div> Ventas</div>
-                  <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-indigo-200"></div> Cotizado</div>
-                </div>
+            <div>
+              <p className="text-xs font-bold text-emerald-900">
+                Mostrando reporte individual de: <span className="font-black text-sm">{selectedUserObj.nombre}</span>
+              </p>
+              <p className="text-[11px] text-emerald-700">
+                {selectedUserObj.correo} • Rol: {selectedUserObj.rol} • Cargo: {selectedUserObj.cargo || 'Ejecutivo'}
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setSelectedUserId('todos')}
+            className="text-xs font-bold text-emerald-800 hover:text-emerald-950 underline px-3 py-1"
+          >
+            Restablecer a todos los usuarios
+          </button>
+        </div>
+      )}
+
+      {/* 4 Primary KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+        <motion.div whileHover={{ y: -3 }} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
+          <div className="flex justify-between items-start mb-4">
+            <div className="p-3 rounded-xl bg-emerald-50 text-emerald-600">
+              <DollarSign className="w-6 h-6" />
+            </div>
+            <div className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+              Ventas
+            </div>
+          </div>
+          <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Monto Total Facturado</p>
+          <h3 className="text-2xl font-black text-slate-800">${(stats.totalVolume / 1000000).toFixed(1)}M</h3>
+          <p className="text-slate-400 text-xs mt-1">
+            {stats.signedContracts} contratos firmados {selectedUserId !== 'todos' ? 'por este usuario' : 'en total'}
+          </p>
+        </motion.div>
+
+        <motion.div whileHover={{ y: -3 }} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
+          <div className="flex justify-between items-start mb-4">
+            <div className="p-3 rounded-xl bg-orange-50 text-orange-600">
+              <Calculator className="w-6 h-6" />
+            </div>
+            <div className="text-[10px] font-bold text-orange-700 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200">
+              Pipeline
+            </div>
+          </div>
+          <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Oportunidades Abiertas</p>
+          <h3 className="text-2xl font-black text-slate-800">${(stats.pendingVolume / 1000000).toFixed(1)}M</h3>
+          <p className="text-slate-400 text-xs mt-1">Presupuestos en etapa de negociación</p>
+        </motion.div>
+
+        <motion.div whileHover={{ y: -3 }} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
+          <div className="flex justify-between items-start mb-4">
+            <div className="p-3 rounded-xl bg-blue-50 text-blue-600">
+              <Users className="w-6 h-6" />
+            </div>
+            <div className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+              Cartera
+            </div>
+          </div>
+          <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Clientes Asignados</p>
+          <h3 className="text-2xl font-black text-slate-800">{stats.totalClients}</h3>
+          <p className="text-slate-400 text-xs mt-1">Compradores y prospectos registrados</p>
+        </motion.div>
+
+        <motion.div whileHover={{ y: -3 }} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
+          <div className="flex justify-between items-start mb-4">
+            <div className="p-3 rounded-xl bg-indigo-50 text-indigo-600">
+              <TrendingUp className="w-6 h-6" />
+            </div>
+            <div className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+              Cierre
+            </div>
+          </div>
+          <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Tasa de Conversión</p>
+          <h3 className="text-2xl font-black text-slate-800">
+            {stats.totalQuotes > 0 ? ((stats.signedContracts / stats.totalQuotes) * 100).toFixed(1) : 0}%
+          </h3>
+          <p className="text-slate-400 text-xs mt-1">Contratos cerrados vs cotizaciones</p>
+        </motion.div>
+      </div>
+
+      {/* SECTION: REPORTE DE VENTAS POR USUARIO */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 space-y-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-4 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <Award className="text-emerald-600" size={22} />
+              <h3 className="text-xl font-black text-slate-800">Reporte de Ventas por Usuario</h3>
+            </div>
+            <p className="text-slate-500 text-xs mt-0.5">
+              Comparativa de ventas, cotizaciones, efectividad de cierre y comisiones por cada ejecutivo comercial.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-bold bg-slate-100 px-3 py-1.5 rounded-xl">
+              {userSalesReports.length} Usuarios Registrados
+            </span>
+          </div>
+        </div>
+
+        {/* User Sales Performance Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                <th className="py-3 px-4 rounded-l-xl">Ejecutivo / Usuario</th>
+                <th className="py-3 px-3">Correo Electrónico</th>
+                <th className="py-3 px-3 text-center">Clientes</th>
+                <th className="py-3 px-3 text-center">Cotizaciones</th>
+                <th className="py-3 px-3 text-center">Contratos</th>
+                <th className="py-3 px-3 text-right">Ventas Totales ($)</th>
+                <th className="py-3 px-3 text-right">Comisión Estimada</th>
+                <th className="py-3 px-3 text-center">Tasa Cierre</th>
+                <th className="py-3 px-4 text-center rounded-r-xl">Acción</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {userSalesReports.map((report, idx) => {
+                const isSelected = selectedUserId === report.user.id;
+                return (
+                  <tr 
+                    key={report.user.id} 
+                    className={`hover:bg-slate-50/80 transition ${isSelected ? 'bg-emerald-50/60 font-semibold' : ''}`}
+                  >
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                          {report.user.nombre.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-800 text-xs">{report.user.nombre}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">{report.user.cargo || report.user.rol}</p>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="py-3.5 px-3 text-slate-600">
+                      <div className="flex items-center gap-1.5">
+                        <Mail size={12} className="text-slate-400 shrink-0" />
+                        <span className="truncate max-w-[180px]">{report.user.correo}</span>
+                      </div>
+                    </td>
+
+                    <td className="py-3.5 px-3 text-center font-bold text-slate-700">
+                      {report.clientsCount}
+                    </td>
+
+                    <td className="py-3.5 px-3 text-center font-bold text-slate-700">
+                      {report.quotesCount}
+                    </td>
+
+                    <td className="py-3.5 px-3 text-center">
+                      <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800">
+                        {report.contractsCount}
+                      </span>
+                    </td>
+
+                    <td className="py-3.5 px-3 text-right font-black text-slate-800 text-sm">
+                      ${report.totalSalesVolume.toLocaleString()} CLP
+                    </td>
+
+                    <td className="py-3.5 px-3 text-right font-bold text-emerald-700">
+                      ${Math.round(report.estimatedCommission).toLocaleString()}
+                    </td>
+
+                    <td className="py-3.5 px-3 text-center">
+                      <div className="flex flex-col items-center">
+                        <span className="font-bold text-slate-800">{report.conversionRate.toFixed(1)}%</span>
+                        <div className="w-16 bg-slate-200 h-1 rounded-full overflow-hidden mt-1">
+                          <div 
+                            className="bg-emerald-500 h-full rounded-full" 
+                            style={{ width: `${Math.min(100, report.conversionRate)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="py-3.5 px-4 text-center">
+                      <button
+                        onClick={() => setSelectedUserId(isSelected ? 'todos' : report.user.id)}
+                        className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition ${
+                          isSelected 
+                            ? 'bg-emerald-600 text-white' 
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {isSelected ? 'Filtrado' : 'Ver Detalle'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Visual Chart: Sales Comparison by User */}
+        <div className="pt-4 border-t border-slate-100">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2">
+            <BarChart3 size={14} className="text-indigo-600" />
+            Comparación Gráfica de Ventas por Ejecutivo (Millones CLP)
+          </h4>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={userBarChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b', fontWeight: 700 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(val) => `$${val}M`} />
+                <Tooltip 
+                  formatter={(val: any, name: string) => [
+                    `$${(Number(val) * 1000000).toLocaleString()} CLP`, 
+                    name === 'ventas' ? 'Ventas Cerradas' : 'Cotizaciones Pendientes'
+                  ]}
+                  contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                />
+                <Legend formatter={(val) => val === 'ventas' ? 'Ventas Cerradas ($M)' : 'Cotizaciones Pendientes ($M)'} />
+                <Bar dataKey="ventas" fill="#059669" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="cotizado" fill="#93c5fd" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* Historical Growth Chart & Warnings */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h3 className="text-xl font-black text-slate-800 tracking-tight">Crecimiento Comercial Mensual</h3>
+              <p className="text-xs text-slate-500">Historial de ventas vs cotizaciones en los últimos 6 meses</p>
+            </div>
+            <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider">
+              <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500"></div> Ventas</div>
+              <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-indigo-200"></div> Cotizado</div>
             </div>
           </div>
           
-          {chartData.every(d => d.realVentas === 0 && d.realCotizado === 0) && (
-              <EmptyChartNotice title="ver historial" />
-          )}
-          
-          <div className="h-64 w-full min-h-[256px]">
+          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorVentas" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
                     <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                   </linearGradient>
                   <linearGradient id="colorCotizado" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#c7d2fe" stopOpacity={0.1}/>
+                    <stop offset="5%" stopColor="#c7d2fe" stopOpacity={0.2}/>
                     <stop offset="95%" stopColor="#c7d2fe" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
@@ -295,224 +640,40 @@ const Dashboard: React.FC = () => {
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 600 }} tickFormatter={(val) => `$${(val / 1000000).toFixed(1)}M`} />
                 <Tooltip 
                   contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', padding: '12px' }}
-                  itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
-                  formatter={(value: any, name: string, props: any) => {
-                    const isReal = props.payload[`real${name.charAt(0).toUpperCase() + name.slice(1)}`] > 0;
-                    const val = isReal ? props.payload[`real${name.charAt(0).toUpperCase() + name.slice(1)}`] : 0;
-                    return [`$${val.toLocaleString()}`, name.charAt(0).toUpperCase() + name.slice(1)];
-                  }}
+                  formatter={(val: any) => [`$${Number(val).toLocaleString()} CLP`]}
                 />
-                <Area type="monotone" dataKey="cotizado" stroke="#c7d2fe" fillOpacity={1} fill="url(#colorCotizado)" strokeWidth={2} isAnimationActive={true} />
-                <Area type="monotone" dataKey="ventas" stroke="#10b981" fillOpacity={1} fill="url(#colorVentas)" strokeWidth={3} isAnimationActive={true} />
+                <Area type="monotone" dataKey="cotizado" stroke="#a5b4fc" strokeWidth={2} fillOpacity={1} fill="url(#colorCotizado)" />
+                <Area type="monotone" dataKey="ventas" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorVentas)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 flex flex-col relative overflow-hidden">
-          <h3 className="text-xl font-black text-slate-800 mb-6">Tasa de Conversión</h3>
-          {stats.totalQuotes === 0 && <EmptyChartNotice title="calcular conversión" />}
-          <div className="flex-1 flex flex-col items-center justify-center relative min-h-[240px]">
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie
-                  data={conversionData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={8}
-                  dataKey="value"
-                >
-                  {conversionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-x-0 bottom-4 flex justify-around">
-               {conversionData.map(d => (
-                 <div key={d.name} className="text-center">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{d.name}</p>
-                    <p className="text-lg font-black text-slate-800">{d.value}</p>
-                 </div>
-               ))}
-            </div>
-          </div>
-        </div>
-      </div>
+        {/* Embudo de Ventas */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+          <h3 className="text-lg font-black text-slate-800 mb-1">Embudo de Ventas (7 Pasos)</h3>
+          <p className="text-xs text-slate-500 mb-4">Avance de clientes por ciclo de venta</p>
 
-      {/* Warning Panel */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b border-slate-50 bg-slate-50 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
-               <AlertTriangle size={20} />
-            </div>
-            <div>
-              <h3 className="font-black text-slate-800">Panel de Advertencias e Hitos</h3>
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Acciones comerciales sugeridas</p>
-            </div>
-          </div>
-          <span className="bg-white px-3 py-1 rounded-full text-xs font-black text-slate-500 border border-slate-200">
-            {warnings.length} PENDIENTES
-          </span>
-        </div>
-        
-        <div className="divide-y divide-slate-50 max-h-[300px] overflow-y-auto">
-          {warnings.length > 0 ? warnings.map(warn => (
-            <div key={warn.id} className="p-6 hover:bg-slate-50 transition-colors flex items-center justify-between group">
-              <div className="flex gap-4">
-                <div className={cn(
-                  "w-2 h-2 mt-2 rounded-full",
-                  warn.severity === 'high' ? 'bg-red-500' : warn.severity === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
-                )} />
-                <div>
-                  <p className="text-sm font-black text-slate-800 flex items-center gap-2">
-                    {warn.title}
-                    {warn.severity === 'high' && (
-                      <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Urgente</span>
-                    )}
-                  </p>
-                  <p className="text-xs text-slate-500 leading-relaxed max-w-xl">{warn.message}</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => handleManage(warn)}
-                className="opacity-0 group-hover:opacity-100 p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all flex items-center gap-2 text-xs font-bold"
-              >
-                Gestionar <ArrowRight size={14} />
-              </button>
-            </div>
-          )) : (
-            <div className="p-12 text-center text-slate-400 italic">
-               <Target className="mx-auto mb-3 opacity-20" size={40} />
-               No hay advertencias críticas pendientes. ¡Buen trabajo!
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard 
-          title="Conversion Rate" 
-          value={`${stats.totalQuotes > 0 ? ((stats.signedContracts / stats.totalQuotes) * 100).toFixed(1) : 0}%`} 
-          trend={stats.signedContracts > 0 ? "+2.4%" : null}
-          sub="Efectividad de cierre"
-          icon={TrendingUp} 
-          color="bg-emerald-600"
-        />
-        <MetricCard 
-          title="Oportunidades" 
-          value={`$${(stats.pendingVolume / 1000000).toFixed(1)}M`} 
-          sub="Presupuesto en negociación"
-          icon={Calculator} 
-          color="bg-orange-600"
-        />
-        <MetricCard 
-          title="Ticket Promedio" 
-          value={`$${(stats.totalVolume / (stats.signedContracts || 1) / 1000000).toFixed(1)}M`}
-          sub="Venta media por contrato"
-          icon={DollarSign} 
-          color="bg-indigo-600"
-        />
-        <MetricCard 
-          title="Catalog Health" 
-          value={stats.activeProjects} 
-          sub="Opciones de modelos activos"
-          icon={Layers} 
-          color="bg-blue-600"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Pipeline Analysis */}
-        <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 h-full">
-              <div className="flex justify-between items-center mb-8">
-                <div>
-                    <h3 className="text-xl font-bold text-slate-800">Embudo de Ventas (7 Pasos)</h3>
-                    <p className="text-sm text-slate-500">Distribución de clientes por etapa del ciclo comercial</p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                  {funnelData.map((stage, idx) => {
-                    const total = stats.totalClients || 1;
-                    const pct = (stage.count / total) * 100;
-                    const colors = [
-                      'bg-slate-400',
-                      'bg-blue-400',
-                      'bg-indigo-400',
-                      'bg-orange-400',
-                      'bg-amber-400',
-                      'bg-emerald-500',
-                      'bg-indigo-600'
-                    ];
-
-                    return (
-                      <div key={stage.name}>
-                        <div className="flex justify-between text-[10px] font-black uppercase tracking-tight mb-1">
-                          <span className="text-slate-500 flex items-center gap-1">
-                            <span className="w-4 h-4 rounded bg-slate-100 flex items-center justify-center text-[8px] text-slate-400">{idx + 1}</span>
-                            {stage.name}
-                          </span>
-                          <span className="text-slate-800">{stage.count} Clientes</span>
-                        </div>
-                        <div className="h-2 bg-slate-50 rounded-full overflow-hidden flex">
-                          <motion.div 
-                            initial={{ width: 0 }}
-                            animate={{ width: `${pct}%` }}
-                            transition={{ duration: 0.8, delay: idx * 0.1 }}
-                            className={cn("h-full rounded-full min-w-[2px]", colors[idx])}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
-                       {[
-                         { label: 'Visitas', val: stats.totalClients, icon: Users, color: 'text-blue-500' },
-                         { label: 'Cotizado', val: stats.totalQuotes, icon: Calculator, color: 'text-indigo-500' },
-                         { label: 'Cierre', val: stats.signedContracts, icon: Target, color: 'text-emerald-500' },
-                         { label: 'Proyección', val: `$${((stats.totalVolume + stats.pendingVolume) / 1000000).toFixed(1)}M`, icon: TrendingUp, color: 'text-amber-500' },
-                       ].map((item, i) => (
-                         <div key={i} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                              <item.icon className={cn("w-5 h-5 mb-2", item.color)} />
-                              <p className="text-xl font-black text-slate-800">{item.val}</p>
-                              <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">{item.label}</p>
-                         </div>
-                       ))}
-                   </div>
-               </div>
-            </div>
-
-        {/* Sidebar Activity */}
-        <div className="space-y-6">
-            <div className="bg-slate-900 p-8 rounded-3xl shadow-xl text-white relative overflow-hidden h-full flex flex-col justify-between">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500 rounded-full blur-[80px] opacity-20"></div>
-                <div>
-                  <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
-                      <Clock className="w-5 h-5 text-emerald-400" />
-                      Actividad de Cierre
-                  </h3>
-                  <div className="space-y-6 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-slate-800">
-                      {recentContracts.length > 0 ? recentContracts.map((c, i) => (
-                          <div key={c.id} className="relative pl-8">
-                              <div className="absolute left-0 top-1 w-4 h-4 rounded-full bg-slate-900 border-2 border-emerald-500 z-10"></div>
-                              <p className="text-sm font-bold truncate">Cotización {c.presupuesto_id.slice(0,8)}</p>
-                              <p className="text-xs text-slate-400 mb-1">{c.fecha_contrato}</p>
-                              <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20 uppercase font-bold">Contrato Generado</span>
-                          </div>
-                      )) : (
-                          <p className="text-slate-500 text-sm italic pl-8">No hay cierres recientes</p>
-                      )}
+          <div className="space-y-3">
+            {funnelData.map((stage, idx) => {
+              const total = stats.totalClients || 1;
+              const pct = (stage.count / total) * 100;
+              return (
+                <div key={stage.name}>
+                  <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                    <span>{idx + 1}. {stage.name}</span>
+                    <span className="font-extrabold text-slate-900">{stage.count}</span>
+                  </div>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-emerald-500 rounded-full transition-all duration-500" 
+                      style={{ width: `${pct}%` }}
+                    />
                   </div>
                 </div>
-            </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -520,4 +681,3 @@ const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
-

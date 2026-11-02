@@ -17,7 +17,9 @@ import {
   BrainCircuit,
   Map as MapIcon,
   ExternalLink,
-  Brush
+  Brush,
+  UserCheck,
+  History
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -85,6 +87,8 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
 
   const groupEmpresa = [
     { id: 'dashboard', label: 'Monitor de Ventas', icon: Home },
+    { id: 'users', label: 'Gestión de Usuarios', icon: UserCheck },
+    { id: 'audit', label: 'Auditoría & Trazabilidad', icon: History },
     { id: 'hub', label: 'Interoperabilidad', icon: ExternalLink },
     { id: 'cubicacion', label: 'Cubicación Inteligente', icon: Calculator },
     { id: 'map', label: 'Georeferencia Global', icon: MapIcon },

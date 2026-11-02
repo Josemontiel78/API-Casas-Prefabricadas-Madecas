@@ -9,6 +9,7 @@ service cloud.firestore {
     match /vendors/{id} { allow read, write: if true; }
     match /admins/{id} { allow read, write: if true; }
     match /house_models/{id} { allow read, write: if true; }
+    match /users/{id} { allow read, write: if true; }
     match /test/{id} { allow read, write: if true; }
     
     // Global safety net for any other paths

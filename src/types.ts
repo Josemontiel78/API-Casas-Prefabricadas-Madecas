@@ -23,6 +23,52 @@ export interface Client {
     lng: number;
   };
   notas_comerciales?: string;
+  rol_propiedad?: string; // ROL SII de la propiedad / terreno
+  comuna?: string;
+  region?: string;
+  superficie_terreno_m2?: number;
+}
+
+export interface SystemUser {
+  id: string;
+  nombre: string;
+  correo: string;
+  telefono?: string;
+  rut?: string;
+  rol: 'vendedor' | 'admin' | 'supervisor' | 'notarial' | 'arquitecto';
+  cargo?: string;
+  activo: boolean;
+  fecha_creacion: string;
+  comision_porcentaje?: number;
+  meta_mensual_pesos?: number;
+  eliminado?: boolean;
+  fecha_eliminacion?: string;
+}
+
+export type AuditAction = 
+  | 'USUARIO_CREADO'
+  | 'USUARIO_MODIFICADO'
+  | 'USUARIO_ESTADO_CAMBIADO'
+  | 'USUARIO_ARCHIVADO'
+  | 'USUARIO_ELIMINADO'
+  | 'CARTERA_REASIGNADA'
+  | 'CLIENTE_CREADO'
+  | 'CLIENTE_MODIFICADO'
+  | 'CLIENTE_ELIMINADO'
+  | 'PRESUPUESTO_CREADO'
+  | 'PRESUPUESTO_MODIFICADO'
+  | 'CONTRATO_CREADO'
+  | 'CONTRATO_FIRMADO';
+
+export interface AuditLog {
+  id: string;
+  usuario_id: string;
+  usuario_nombre: string;
+  accion: AuditAction;
+  entidad: 'users' | 'clients' | 'budgets' | 'contracts' | 'settings';
+  entidad_id: string;
+  detalles: Record<string, any>;
+  timestamp: string;
 }
 
 export interface Vendor {
@@ -171,5 +217,5 @@ export interface HouseModel {
 }
 
 // Helper type for views
-export type ViewState = 'dashboard' | 'hub' | 'map' | 'clients' | 'projects' | 'budgets' | 'contracts' | 'settings' | 'ai-assistant' | 'cubicacion' | 'designs';
+export type ViewState = 'dashboard' | 'hub' | 'map' | 'clients' | 'projects' | 'budgets' | 'contracts' | 'settings' | 'ai-assistant' | 'cubicacion' | 'designs' | 'users' | 'audit';
 export type UserRole = 'vendedor' | 'admin';

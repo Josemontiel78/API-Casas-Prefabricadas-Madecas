@@ -108,6 +108,18 @@
         "email": { "type": "string" }
       },
       "required": ["email"]
+    },
+    "User": {
+      "title": "SystemUser",
+      "description": "System users and staff",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nombre": { "type": "string" },
+        "correo": { "type": "string" },
+        "rol": { "type": "string" }
+      },
+      "required": ["id", "nombre", "correo", "rol"]
     }
   },
   "firestore": {
@@ -138,6 +150,10 @@
     "house_models": {
       "schema": "HouseModel",
       "description": "Collection of available house designs in the catalog"
+    },
+    "users": {
+      "schema": "User",
+      "description": "Collection of system users and sales executives"
     }
   }
 }

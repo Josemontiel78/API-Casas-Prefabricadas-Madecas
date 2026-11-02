@@ -12,6 +12,7 @@ import ProjectMapOverview from '@/components/ProjectMapOverview';
 import VendorSettings from '@/components/VendorSettings';
 import CubicacionManager from '@/components/CubicacionManager';
 import DesignGallery from '@/components/DesignGallery';
+import UserManager from '@/components/UserManager';
 import Login from '@/components/Login';
 import { ViewState, UserRole } from '@/types';
 
@@ -48,6 +49,8 @@ const App: React.FC = () => {
       case 'hub': return <CommercialHub />;
       case 'map': return <ProjectMapOverview />;
       case 'clients': return <ClientManager />;
+      case 'users': return <UserManager initialTab="users" />;
+      case 'audit': return <UserManager initialTab="audit" />;
       case 'projects': return <ProjectManager />;
       case 'budgets': return <BudgetManager />;
       case 'contracts': return <ContractManager />;

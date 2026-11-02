@@ -77,6 +77,8 @@ const ContractManager: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [activeContractForUpload, setActiveContractForUpload] = useState<string | null>(null);
+  const [contractToDelete, setContractToDelete] = useState<string | null>(null);
+  const [isDeletingContract, setIsDeletingContract] = useState(false);
   
   // Selection Logic Helpers
   const selectedBudget = budgets.find(b => b.id === selectedBudgetId);
@@ -399,13 +401,27 @@ const ContractManager: React.FC = () => {
     }));
   };
 
-  const handleDelete = async (id: string) => {
-      if(window.confirm("¿Está seguro de eliminar este contrato? Esta acción no se puede deshacer.")) {
-          await deleteContract(id);
-          window.dispatchEvent(new CustomEvent('app-notification', { 
-            detail: { message: 'Contrato eliminado', type: 'info' } 
-          }));
-      }
+  const handleDelete = (id: string) => {
+    setContractToDelete(id);
+  };
+
+  const confirmDeleteContract = async () => {
+    if (!contractToDelete) return;
+    setIsDeletingContract(true);
+    try {
+      await deleteContract(contractToDelete);
+      window.dispatchEvent(new CustomEvent('app-notification', { 
+        detail: { message: 'Contrato eliminado exitosamente', type: 'info' } 
+      }));
+      setContractToDelete(null);
+    } catch (err) {
+      console.error("Error al eliminar contrato:", err);
+      window.dispatchEvent(new CustomEvent('app-notification', { 
+        detail: { message: 'No se pudo eliminar el contrato', type: 'error' } 
+      }));
+    } finally {
+      setIsDeletingContract(false);
+    }
   };
 
   const handleEditSavedContract = (contract: Contract) => {
@@ -740,18 +756,18 @@ Se deja constancia que las presentes especificaciones pasan a formar parte integ
                     </div>`;
                 }
 
-                return `<div style="text-align: justify; margin-bottom: 22px; line-height: 1.6;">
-                    <strong style="text-transform: uppercase; font-size: 11.5pt; text-decoration: underline; font-weight: bold;">${clause}</strong> ${rest}
+                return `<div style="text-align: justify; margin-bottom: 14px; line-height: 1.45;">
+                    <strong style="text-transform: uppercase; font-size: 11pt; text-decoration: underline; font-weight: bold;">${clause}</strong> ${rest}
                 </div>`;
             }
         }
 
         // Section "SR/A ... Y ... SR/A"
         if (content.includes('SR/A') && content.includes(' Y ')) {
-            return `<div style="text-align: center; margin: 35px 0; font-size: 12pt; line-height: 1.8; font-weight: bold;">${content}</div>`;
+            return `<div style="text-align: center; margin: 20px 0; font-size: 11pt; line-height: 1.5; font-weight: bold;">${content}</div>`;
         }
 
-        return `<p style="text-align: justify; margin-bottom: 18px; line-height: 1.6; font-size: 10.5pt;">${content}</p>`;
+        return `<p style="text-align: justify; margin-bottom: 12px; line-height: 1.45; font-size: 10.5pt;">${content}</p>`;
     }).join('');
   };
 
@@ -782,10 +798,10 @@ Se deja constancia que las presentes especificaciones pasan a formar parte integ
         }
 
         const signaturesTable = `
-        <div class="signature-section">
-          <table class="sig-table">
-            <tr>
-              <td class="sig-cell">
+        <div class="signature-section" style="page-break-inside: avoid !important; break-inside: avoid !important;">
+          <table class="sig-table" style="width: 100%; border: 1.5px solid #000; border-collapse: collapse; margin-top: 12px; page-break-inside: avoid !important; break-inside: avoid !important;">
+            <tr style="page-break-inside: avoid !important; break-inside: avoid !important;">
+              <td class="sig-col" style="width: 50%; vertical-align: top; border-right: 1.5px solid #000; padding: 6px 8px; text-align: center; page-break-inside: avoid !important; break-inside: avoid !important;">
                 <div class="sig-type">EL VENDEDOR</div>
                 <div class="sig-header">
                   INVERSIONES E&E SPA<br>
@@ -793,11 +809,11 @@ Se deja constancia que las presentes especificaciones pasan a formar parte integ
                 </div>
                 <div class="sig-role">Representante legal</div>
                 <div class="sig-space">
-                   ${contract.firma_vendedor ? `<img src="${contract.firma_vendedor}" class="sig-img" />` : '<div style="height: 40px;"></div>'}
+                   ${contract.firma_vendedor ? `<img src="${contract.firma_vendedor}" class="sig-img" />` : '<div style="height: 32px;"></div>'}
                 </div>
                 <div class="sig-footer">R.U.T.: 78.210.119-6</div>
               </td>
-              <td class="sig-cell">
+              <td class="sig-col" style="width: 50%; vertical-align: top; padding: 6px 8px; text-align: center; page-break-inside: avoid !important; break-inside: avoid !important;">
                 <div class="sig-type">EL COMPRADOR</div>
                 <div class="sig-header">
                   COMPRADOR TITULAR<br>
@@ -805,7 +821,7 @@ Se deja constancia que las presentes especificaciones pasan a formar parte integ
                 </div>
                 <div class="sig-role">Comprador Titular</div>
                 <div class="sig-space">
-                   ${contract.firma_cliente ? `<img src="${contract.firma_cliente}" class="sig-img" />` : '<div style="height: 40px;"></div>'}
+                   ${contract.firma_cliente ? `<img src="${contract.firma_cliente}" class="sig-img" />` : '<div style="height: 32px;"></div>'}
                 </div>
                 <div class="sig-footer">R.U.T : <span class="blue-text">${client?.rut || ''}</span></div>
               </td>
@@ -823,10 +839,10 @@ Se deja constancia que las presentes especificaciones pasan a formar parte integ
               <style>
                 @page { 
                     size: A4; 
-                    margin: 38mm 25mm 30mm 25mm; 
+                    margin: 28mm 20mm 24mm 20mm; 
                 }
                 @media print {
-                  @page { margin: 38mm 25mm 30mm 25mm; }
+                  @page { margin: 28mm 20mm 24mm 20mm; }
                   body { 
                     margin: 0 !important;
                     padding: 0 !important;
@@ -859,19 +875,22 @@ Se deja constancia que las presentes especificaciones pasan a formar parte integ
                     background: transparent !important;
                 }
 
-                .content p, .content li, .content div, .content ul {
-                    page-break-inside: auto !important;
-                    break-inside: auto !important;
+                .content > div:not(.signature-section):not(.closing-section),
+                .content p, 
+                .content li, 
+                .content ul {
+                    page-break-inside: auto;
+                    break-inside: auto;
                 }
 
-                h1 { text-align: center; text-transform: uppercase; font-size: 15pt; margin-bottom: 20px; text-decoration: underline; font-weight: bold; }
+                h1 { text-align: center; text-transform: uppercase; font-size: 14pt; margin-bottom: 16px; text-decoration: underline; font-weight: bold; }
                 
-                p, li { text-align: justify; font-size: 11pt; margin-bottom: 12px; background: transparent !important; }
+                p, li { text-align: justify; font-size: 10.5pt; margin-bottom: 12px; background: transparent !important; }
                 
                 .bg-mark {
                     position: fixed;
-                    top: -38mm;
-                    left: -25mm;
+                    top: -28mm;
+                    left: -20mm;
                     width: 210mm;
                     height: 297mm;
                     z-index: -10;
@@ -879,70 +898,82 @@ Se deja constancia que las presentes especificaciones pasan a formar parte integ
                     pointer-events: none;
                 }
                 
+                .closing-section,
+                .signature-section,
+                .sig-table,
+                .sig-col {
+                    page-break-inside: avoid !important;
+                    break-inside: avoid !important;
+                    break-inside: avoid-page !important;
+                }
+
                 .signature-section {
-                    margin-top: 25px;
-                    page-break-inside: avoid;
-                    break-inside: avoid;
+                    margin-top: 14px;
+                    display: block !important;
+                    page-break-inside: avoid !important;
+                    break-inside: avoid !important;
                 }
                 .sig-table {
-                    width: 100%;
-                    border: 0.5pt solid #000;
-                    border-collapse: collapse;
-                    background: transparent;
-                    table-layout: fixed;
+                    width: 100% !important;
+                    border: 1.5px solid #000 !important;
+                    border-collapse: collapse !important;
+                    box-sizing: border-box !important;
+                    background: transparent !important;
+                    page-break-inside: avoid !important;
+                    break-inside: avoid !important;
                 }
-                .sig-cell {
-                    width: 50%;
-                    border: 1pt solid #000;
-                    text-align: center;
-                    vertical-align: top;
-                    padding: 12px 10px;
-                    height: 175px; 
-                    box-sizing: border-box;
+                .sig-col {
+                    width: 50% !important;
+                    box-sizing: border-box !important;
+                    padding: 8px 6px 6px 6px !important;
+                    text-align: center !important;
+                    page-break-inside: avoid !important;
+                    break-inside: avoid !important;
                 }
                 .sig-type {
                     font-weight: bold;
-                    font-size: 11pt;
-                    margin-bottom: 8px;
+                    font-size: 10pt;
+                    margin-bottom: 4px;
                     text-decoration: underline;
                     text-transform: uppercase;
-                    height: 18px;
+                    height: 15px;
                 }
                 .sig-header { 
                     font-weight: bold; 
                     font-size: 8.5pt; 
-                    line-height: 1.3; 
-                    height: 28px; 
+                    line-height: 1.2; 
+                    min-height: 24px; 
                     text-align: center;
                 }
                 .sig-role { 
                     font-style: italic; 
                     font-size: 8pt; 
-                    height: 14px; 
+                    height: 13px; 
                     text-align: center;
-                    margin-top: 4px;
-                    margin-bottom: 4px;
+                    margin-top: 2px;
+                    margin-bottom: 2px;
                 }
                 .sig-space { 
-                    height: 55px; 
+                    height: 40px; 
                     text-align: center;
-                    line-height: 55px;
-                    margin: 4px 0;
-                    border-top: 1px dashed #eee;
-                    border-bottom: 1px dashed #eee;
+                    line-height: 40px; 
+                    margin: 2px 0;
+                    border-top: 1px dashed #ccc;
+                    border-bottom: 1px dashed #ccc;
                 }
                 .sig-img { 
-                    max-height: 50px; 
+                    max-height: 38px; 
                     max-width: 90%; 
                     object-fit: contain;
                     display: inline-block;
                     vertical-align: middle;
                 }
                 .sig-footer { 
-                    font-size: 9.5pt; 
+                    font-size: 9pt; 
                     font-weight: bold; 
-                    height: 18px;
+                    height: 16px;
                     text-align: center;
+                    margin-top: 4px;
                 }
                 
                 .footer-banner {
@@ -951,9 +982,9 @@ Se deja constancia que las presentes especificaciones pasan a formar parte integ
 
                 .page-number {
                     position: fixed;
-                    bottom: -18mm;
-                    right: -10mm;
-                    font-size: 10pt;
+                    bottom: -15mm;
+                    right: -8mm;
+                    font-size: 9.5pt;
                     font-weight: bold;
                     color: #1a3a1f;
                     z-index: 60;
@@ -973,11 +1004,8 @@ Se deja constancia que las presentes especificaciones pasan a formar parte integ
                     ${bodyHtml}
                   </div>
 
-                  <div style="margin-top: 25px;">
+                  <div class="closing-section" style="margin-top: 16px;">
                     ${lastPartHtml}
-                  </div>
-
-                  <div class="signature-section">
                     ${signaturesTable}
                   </div>
               </div>
@@ -1418,6 +1446,47 @@ Se deja constancia que las presentes especificaciones pasan a formar parte integ
               </button>
               <button onClick={saveSignature} className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition transform active:scale-95">
                 Confirmar Firma
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Contract Confirmation Modal */}
+      {contractToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 animate-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">¿Eliminar contrato?</h3>
+            <p className="text-sm text-slate-500 mb-6">
+              Esta acción eliminará el registro del contrato y sus pautas de pago de la base de datos de forma permanente.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setContractToDelete(null)}
+                disabled={isDeletingContract}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-medium text-sm transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDeleteContract}
+                disabled={isDeletingContract}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-red-200 transition flex items-center gap-2"
+              >
+                {isDeletingContract ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={16} />
+                    <span>Sí, eliminar</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
