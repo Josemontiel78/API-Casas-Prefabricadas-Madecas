@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import MapProjectPicker from '@/components/MapProjectPicker';
+import { parseGeoInput } from '@/utils/geoParser';
 
 // Component to handle smooth map centering
 const MapController = ({ centerPos }: { centerPos: L.LatLngExpression | null }) => {
@@ -132,7 +133,9 @@ const ProjectMapOverview: React.FC = () => {
   const findMyLocation = () => {
     setIsLocating(true);
     if (!navigator.geolocation) {
-      alert("Tu dispositivo no soporta geolocalización GPS");
+      window.dispatchEvent(new CustomEvent('app-notification', { 
+        detail: { message: 'Tu dispositivo o navegador no soporta geolocalización GPS', type: 'error' } 
+      }));
       setIsLocating(false);
       return;
     }
@@ -141,10 +144,15 @@ const ProjectMapOverview: React.FC = () => {
         const { latitude, longitude } = position.coords;
         setUserLocation([latitude, longitude]);
         setIsLocating(false);
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+          detail: { message: 'Ubicación GPS obtenida exitosamente', type: 'success' } 
+        }));
       },
       (error) => {
         console.error("Error obteniendo ubicación:", error);
-        alert("No se pudo obtener la ubicación actual.");
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+          detail: { message: 'No se pudo obtener la ubicación GPS actual. Verifica los permisos de tu navegador.', type: 'error' } 
+        }));
         setIsLocating(false);
       },
       { enableHighAccuracy: true, timeout: 15000 }
@@ -153,13 +161,27 @@ const ProjectMapOverview: React.FC = () => {
 
   const handleAddressSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchQuery.trim()) return;
+    const query = searchQuery.trim();
+    if (!query) return;
     
-    // Check if query matches a client's name or rol
+    // 1. Check if query is a coordinate pair, WhatsApp location link or cardinal notation (e.g. 40.3127 s y 73.4207 w)
+    const parsedGeo = parseGeoInput(query);
+    if (parsedGeo) {
+      setUserLocation([parsedGeo.lat, parsedGeo.lng]);
+      window.dispatchEvent(new CustomEvent('app-notification', { 
+        detail: { 
+          message: `Ubicación localizada: ${parsedGeo.formattedDisplay}${parsedGeo.notes ? ` (${parsedGeo.notes})` : ''}`, 
+          type: 'success' 
+        } 
+      }));
+      return;
+    }
+
+    // 2. Check if query matches an existing client's name or rol
     const match = clients.find(c => 
-      c.nombre.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      (c.rol_propiedad && c.rol_propiedad.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      c.rut.toLowerCase().includes(searchQuery.toLowerCase())
+      c.nombre.toLowerCase().includes(query.toLowerCase()) || 
+      (c.rol_propiedad && c.rol_propiedad.toLowerCase().includes(query.toLowerCase())) ||
+      c.rut.toLowerCase().includes(query.toLowerCase())
     );
 
     if (match && match.location) {
@@ -168,16 +190,19 @@ const ProjectMapOverview: React.FC = () => {
       return;
     }
 
-    // Otherwise geocode via Nominatim
+    // 3. Otherwise geocode via Nominatim with Chilean bias
     setIsLocating(true);
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery + ', Chile')}`);
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Chile')}`);
       const data = await response.json();
       if (data && data.length > 0) {
         setUserLocation([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+          detail: { message: `Ubicado en el mapa: ${data[0].display_name.split(',').slice(0, 3).join(',')}`, type: 'info' } 
+        }));
       } else {
         window.dispatchEvent(new CustomEvent('app-notification', { 
-          detail: { message: 'No se encontró la dirección en el mapa.', type: 'info' } 
+          detail: { message: 'No se encontró la dirección exacta. Puedes ingresar coordenadas o buscar por cliente/rol.', type: 'info' } 
         }));
       }
     } catch (err) {

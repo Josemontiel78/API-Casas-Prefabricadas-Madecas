@@ -389,7 +389,7 @@ const ClientManager: React.FC = () => {
                 />
               </div>
               <p className="text-[11px] text-slate-500 mt-2 text-center">
-                Puedes buscar por dirección o rol, mover el marcador directamente en el mapa o usar tu GPS actual.
+                Puedes pegar coordenadas con S/W (ej: <span className="font-mono font-bold text-slate-700">40.3127 s y 73.4207 w</span>), enlaces de WhatsApp/Google Maps, buscar por dirección o mover el marcador directamente.
               </p>
             </div>
           </div>
