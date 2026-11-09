@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { getClients, getProjects, getBudgets, getContracts, getVendor } from '@/services/db';
-import { generateBusinessAnalysis } from '@/services/gemini';
+import { generateBusinessAnalysis, streamBusinessAnalysis } from '@/services/gemini';
 import { Send, Mic, BrainCircuit, FileText, PieChart, TrendingUp, Download, Sparkles, StopCircle, RefreshCw, BarChart3, Mail } from 'lucide-react';
 
 interface Message {
@@ -56,19 +56,66 @@ const AIAssistant: React.FC = () => {
     if (!text.trim()) return;
 
     const userMsg: Message = { role: 'user', content: text, timestamp: new Date().toLocaleTimeString() };
-    setMessages(prev => [...prev, userMsg]);
+    const initialBotMsg: Message = { role: 'assistant', content: '', timestamp: new Date().toLocaleTimeString() };
+
+    setMessages(prev => [...prev, userMsg, initialBotMsg]);
     setInput('');
     setIsLoading(true);
 
-    try {
-        const aiResponse = await generateBusinessAnalysis(dataContext, text);
-        const botMsg: Message = { role: 'assistant', content: aiResponse, timestamp: new Date().toLocaleTimeString() };
-        setMessages(prev => [...prev, botMsg]);
-    } catch (error) {
-        setMessages(prev => [...prev, { role: 'assistant', content: 'Lo siento, tuve un problema al analizar los datos.', timestamp: new Date().toLocaleTimeString() }]);
-    } finally {
+    let accumulatedContent = '';
+
+    await streamBusinessAnalysis(
+      dataContext,
+      text,
+      (chunk) => {
+        accumulatedContent += chunk;
+        setMessages(prev => {
+          const next = [...prev];
+          const lastIdx = next.length - 1;
+          if (lastIdx >= 0 && next[lastIdx].role === 'assistant') {
+            next[lastIdx] = {
+              ...next[lastIdx],
+              content: accumulatedContent
+            };
+          }
+          return next;
+        });
+      },
+      () => {
         setIsLoading(false);
-    }
+      },
+      async (err) => {
+        console.warn("Fallback to standard response on stream error:", err);
+        try {
+          const fallbackResp = await generateBusinessAnalysis(dataContext, text);
+          setMessages(prev => {
+            const next = [...prev];
+            const lastIdx = next.length - 1;
+            if (lastIdx >= 0 && next[lastIdx].role === 'assistant') {
+              next[lastIdx] = {
+                ...next[lastIdx],
+                content: fallbackResp || 'Lo siento, tuve un problema al analizar los datos.'
+              };
+            }
+            return next;
+          });
+        } catch (e) {
+          setMessages(prev => {
+            const next = [...prev];
+            const lastIdx = next.length - 1;
+            if (lastIdx >= 0 && next[lastIdx].role === 'assistant') {
+              next[lastIdx] = {
+                ...next[lastIdx],
+                content: 'Lo siento, tuve un problema al analizar los datos.'
+              };
+            }
+            return next;
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    );
   };
 
   // --- Voice Recognition ---

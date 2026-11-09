@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Contract, Budget, Client, Project, Vendor, ContractStatus, PaymentInstallment, HouseModel } from '@/types';
 import { getContracts, saveContract, getBudgets, getClients, getProjects, getVendor, deleteContract, subscribeToContracts, subscribeToBudgets, subscribeToClients, subscribeToProjects, saveClient, subscribeToHouseModels } from '@/services/db';
-import { generateContractText } from '@/services/gemini';
+import { generateContractText, numberToSpanishWords } from '@/services/gemini';
 import { uuid, compressImage } from '@/lib/utils';
 import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, Edit3, Eye, FileType, Trash2, Maximize2, AlertCircle, Calculator, ArrowRight, Upload, Image as ImageIcon, DollarSign } from 'lucide-react';
 
@@ -375,7 +375,9 @@ const ContractManager: React.FC = () => {
       proyecto_snapshot: selectedProject,
       presupuesto_snapshot: selectedBudget,
       es_anexo: isAnexo,
-      parent_contract_id: parentContractId || undefined
+      parent_contract_id: parentContractId || undefined,
+      es_combinacion_modelos: selectedBudget.es_combinacion_modelos,
+      modelos_combinados: selectedBudget.modelos_combinados
     };
 
     await saveContract(contractData);
@@ -448,32 +450,66 @@ const ContractManager: React.FC = () => {
     
     const sortedContracts = [...contracts].sort((a, b) => a.fecha_contrato.localeCompare(b.fecha_contrato));
     const parentIdx = sortedContracts.findIndex(c => c.id === contract.id) + 1;
-    const parentSeqText = parentIdx > 0 ? String(parentIdx).padStart(3, '0') : '';
+    const parentSeqText = parentIdx > 0 ? String(parentIdx).padStart(3, '0') : '001';
+    const cli = contract.cliente_snapshot || clients.find(c => c.id === contract.cliente_id);
+    const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const today = new Date();
+    const todayStr = `${today.getDate()} de ${months[today.getMonth()]} de ${today.getFullYear()}`;
 
-    // Copy existing data but mark as annex with formal template
-    setGeneratedText(`ANEXO AL CONTRATO DE COMPRAVENTA N° ${parentSeqText}
+    const contractBudget = contract.presupuesto_snapshot || budgets.find(b => b.id === contract.presupuesto_id);
+    const adicItems = (contractBudget?.detalle_items || []).filter(i => !i.descripcion.includes('CASA MODELO') && i.precio_unitario > 0);
+    const adicTotal = adicItems.reduce((s, i) => s + i.total, 0);
 
-Este documento constituye un ANEXO al contrato principal N° ${parentSeqText} celebrado el día ${contract.fecha_contrato}.
+    const adicListText = adicItems.length > 0
+      ? adicItems.map(i => `- ${i.descripcion.toUpperCase()} | Cantidad: ${i.cantidad} ${i.unidad || 'un'} | Precio Unitario: $${i.precio_unitario.toLocaleString('es-CL')} CLP | Subtotal: $${i.total.toLocaleString('es-CL')} CLP`).join('\n')
+      : `- [Indicar obras adicionales solicitadas: Radier reforzado con zapata 40x40, encamisado OSB en paredes o techumbre, vigas a la vista en living-comedor y cocina, o revestimiento exterior en Siding/Norway]
+- [Detallar especificaciones de materiales y partidas requeridas con cantidad, precio unitario y total]`;
 
-Las partes de mutuo acuerdo convienen e incorporan bajo el amparo de la legislación chilena vigente, las siguientes modificaciones técnicas y/o adicionales al contrato principal:
+    const totalText = adicTotal > 0 
+      ? `$${adicTotal.toLocaleString('es-CL')} CLP (${numberToSpanishWords(adicTotal)} pesos chilenos)` 
+      : `$${contract.monto_total.toLocaleString('es-CL')} CLP`;
 
-1. [Describir cambio en presupuesto/alcance/especificaciones]
-2. [Describir cambio en plazos/pagos]
+    // Formal legal Annex template according to Chilean legislation
+    setGeneratedText(`ANEXO N° 01 AL CONTRATO DE COMPRAVENTA E INSTALACIÓN N° ${parentSeqText}
+INVERSIONES E&E SPA Y ${(cli?.nombre || 'EL COMPRADOR').toUpperCase()}
 
-Se deja constancia que las presentes especificaciones pasan a formar parte integra del contrato de compraventa individualizado precedentemente. Se mantiene plenamente vigente todo lo no expresamente modificado por el presente instrumento, firmándose dos ejemplares del mismo tenor y fecha.`);
+En Osorno, a ${todayStr}, entre INVERSIONES E&E SPA, del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por don EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Comuna de Osorno, en adelante "EL VENDEDOR", por una parte; y don (a) ${(cli?.nombre || 'COMPRADOR').toUpperCase()}, RUT ${cli?.rut || ''}, domiciliado en ${(cli?.domicilio || '').toUpperCase()}, Teléfono: ${cli?.telefono || ''}, en adelante "EL COMPRADOR", por la otra; se conviene el presente ANEXO ACCESORIO AL CONTRATO PRINCIPAL DE COMPRAVENTA N° ${parentSeqText} de fecha ${contract.fecha_contrato}:
+
+PRIMERO: ANTECEDENTES
+Con fecha ${contract.fecha_contrato}, las partes suscribieron contrato de compraventa e instalación de vivienda prefabricada en el terreno ubicado en ${(cli?.domicilio || '').toUpperCase()}${cli?.rol_propiedad ? `, Rol de Avalúo SII N° ${cli.rol_propiedad}` : ''}${cli?.comuna ? `, Comuna de ${cli.comuna}` : ''}.
+
+SEGUNDO: OBRAS Y MEJORAMIENTOS ADICIONALES
+A expresa solicitud del COMPRADOR, y fuera del alcance originalmente pactado en el contrato principal, se conviene la ejecución de las siguientes OBRAS Y MEJORAMIENTOS ADICIONALES:
+${adicListText}
+
+TERCERO: PRECIO Y FORMA DE PAGO DE LOS ADICIONALES
+El valor de las obras adicionales pactadas en el presente anexo asciende a la suma de ${totalText} (IVA incluido), el cual el COMPRADOR pagará de la siguiente forma:
+a) 50% al momento de suscripción del presente anexo complementario.
+b) 50% una vez finalizada la ejecución de los adicionales pactados a entera satisfacción.
+
+CUARTO: PLAZO DE EJECUCIÓN
+Las partes acuerdan que las presentes obras se ejecutarán dentro del plazo estipulado para la obra principal, o con una prórroga de ... días hábiles adicionales si las condiciones técnicas o climáticas lo requiriesen.
+
+QUINTO: RATIFICACIÓN Y PLENA VIGENCIA
+En todo lo no expresamente modificado o complementado por el presente anexo, permanecen plenamente vigentes y ratificadas todas las estipulaciones, penalidades, garantías y cláusulas del contrato principal de compraventa N° ${parentSeqText}.
+
+Para constancia de lo acordado, se suscribe en dos ejemplares del mismo tenor y fecha en Osorno.`);
     
     setContractDate(new Date().toISOString().split('T')[0]);
     setStartDate(contract.fecha_inicio_obra || '');
-    setPlazoInstalacion(contract.plazo_instalacion_dias || 30);
+    setPlazoInstalacion(15);
     setLugarSuscripcion(contract.lugar_suscripcion || 'Osorno');
     setMetodoPago(contract.metodo_pago);
-    setPayments(contract.hitos_pago);
+    setPayments([
+      { descripcion: '50% - AL SUSCRIBIR ESTE ANEXO DE OBRAS ADICIONALES', porcentaje: 50, monto: 0 },
+      { descripcion: '50% - CONTRA ENTREGA FINAL DE LAS OBRAS ADICIONALES', porcentaje: 50, monto: 0 }
+    ]);
     
     setIsCreating(true);
     setViewMode('edit');
     
     window.dispatchEvent(new CustomEvent('app-notification', { 
-        detail: { message: 'Creando Anexo. El texto base se ha copiado para su edición.', type: 'info' } 
+        detail: { message: 'Creando Anexo al Contrato. Edita las partidas o cuotas según lo acordado.', type: 'info' } 
     }));
   };
 
@@ -1548,6 +1584,9 @@ Se deja constancia que las presentes especificaciones pasan a formar parte integ
                                   </h4>
                                   {contract.es_anexo && parentSeqText && (
                                       <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black rounded uppercase">Anexo de N° {parentSeqText}</span>
+                                  )}
+                                  {(contract.es_combinacion_modelos || contract.presupuesto_snapshot?.es_combinacion_modelos) && (
+                                      <span className="px-2 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-black rounded uppercase border border-purple-200">Modular Multi-Modelo</span>
                                   )}
                                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
                                       isSigned ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'

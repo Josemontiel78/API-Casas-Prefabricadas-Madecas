@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Home, 
@@ -14,12 +14,42 @@ import {
   Loader2,
   X,
   CreditCard,
-  Maximize2
+  Maximize2,
+  Calculator,
+  BedDouble,
+  Bath,
+  CheckCircle2,
+  Gift,
+  Sliders,
+  DollarSign,
+  Tag,
+  Layers
 } from 'lucide-react';
-import { HouseModel, BudgetItem, Client } from '@/types';
+import { HouseModel, BudgetItem, Client, CombinedModelModule } from '@/types';
 import { subscribeToHouseModels, saveHouseModel, deleteHouseModel, getClients, saveClient } from '@/services/db';
 import { analyzeHouseModelFile } from '@/services/gemini';
-import { uuid, compressImage } from '@/lib/utils';
+import { uuid, compressImage, cn } from '@/lib/utils';
+import { 
+  DEFAULT_VALOR_M2_BASE, 
+  MADECAS_PROMO_THRESHOLD_M2, 
+  MADECAS_PROMO_TEXT, 
+  MADECAS_PACK_BASICO_SPECS 
+} from '@/constants/catalog';
+
+const PRESET_VALORES_M2 = [
+  { label: 'Económico', valor: 175000 },
+  { label: 'Estándar Madecas', valor: 195000 },
+  { label: 'Terminación Superior', valor: 220000 }
+];
+
+const CATEGORIAS_MODELOS = [
+  'Todos',
+  'Básico 2 Aguas',
+  'Básico 4 Aguas',
+  'Contemporáneo',
+  'Premium',
+  'Básico 6 Aguas'
+];
 
 const DesignGallery: React.FC = () => {
   const [models, setModels] = useState<HouseModel[]>([]);
@@ -30,9 +60,15 @@ const DesignGallery: React.FC = () => {
   const [analysisStatus, setAnalysisStatus] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('Todos');
   const [selectedFile, setSelectedFile] = useState<{base64: string, type: string} | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  
+  // Dynamic Pricing State: calculated by m2 * valor_m2
+  const [globalValorM2, setGlobalValorM2] = useState<number>(DEFAULT_VALOR_M2_BASE);
+  const [customRatesPerModel, setCustomRatesPerModel] = useState<Record<string, number>>({});
+  const [viewingModel, setViewingModel] = useState<HouseModel | null>(null);
 
   useEffect(() => {
     const unsubscribe = subscribeToHouseModels((data) => {
@@ -40,7 +76,7 @@ const DesignGallery: React.FC = () => {
       setLoading(false);
     });
 
-    // Check for selected client context
+    // Check for selected client context from ClientManager
     const clientId = window.localStorage.getItem('selected_client_id');
     if (clientId) {
       getClients().then(allClients => {
@@ -52,14 +88,37 @@ const DesignGallery: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  const getModelRate = (model: HouseModel): number => {
+    if (customRatesPerModel[model.id]) return customRatesPerModel[model.id];
+    if (model.valor_m2_sugerido && model.valor_m2_sugerido > 0) return model.valor_m2_sugerido;
+    return globalValorM2;
+  };
+
+  const handleModelRateChange = (modelId: string, newRate: number) => {
+    setCustomRatesPerModel(prev => ({
+      ...prev,
+      [modelId]: Math.max(0, newRate)
+    }));
+  };
+
+  const calculateTotalBase = (model: HouseModel): number => {
+    const rate = getModelRate(model);
+    return Math.round(model.superficie_m2 * rate);
+  };
+
   const handleCreateNew = () => {
     setCurrentModel({
       id: uuid(),
       nombre: '',
       descripcion: '',
-      superficie_m2: 0,
+      superficie_m2: 36,
       preciobase: 0,
+      valor_m2_sugerido: globalValorM2,
+      categoria: 'Contemporáneo',
+      dormitorios: '2 a 3 dormitorios',
+      banos: 1,
       especificaciones: [],
+      caracteristicas_pack_basico: MADECAS_PACK_BASICO_SPECS,
       fecha_creacion: new Date().toISOString(),
       vendedor_id: 'public'
     });
@@ -72,7 +131,7 @@ const DesignGallery: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('¿Estás seguro de eliminar este diseño?')) {
+    if (confirm('¿Estás seguro de eliminar este diseño del catálogo?')) {
       await deleteHouseModel(id);
     }
   };
@@ -81,10 +140,25 @@ const DesignGallery: React.FC = () => {
     if (currentModel && currentModel.id) {
       try {
         setAnalyzing(true);
-        setAnalysisStatus('Guardando cambios...');
-        await saveHouseModel(currentModel as HouseModel);
+        setAnalysisStatus('Guardando cambios en catálogo...');
         
-        // Ensure state is cleared and modal closed explicitly
+        const modelToSave: HouseModel = {
+          id: currentModel.id,
+          nombre: currentModel.nombre || 'Modelo Sin Nombre',
+          descripcion: currentModel.descripcion || '',
+          superficie_m2: Number(currentModel.superficie_m2) || 36,
+          preciobase: 0, // Not hardcoded; calculated dynamically
+          valor_m2_sugerido: Number(currentModel.valor_m2_sugerido) || globalValorM2,
+          categoria: currentModel.categoria || 'Contemporáneo',
+          dormitorios: currentModel.dormitorios || '2 dormitorios',
+          banos: Number(currentModel.banos) || 1,
+          imagen_url: currentModel.imagen_url || '',
+          especificaciones: currentModel.especificaciones || [],
+          caracteristicas_pack_basico: currentModel.caracteristicas_pack_basico || MADECAS_PACK_BASICO_SPECS,
+          fecha_creacion: currentModel.fecha_creacion || new Date().toISOString()
+        };
+
+        await saveHouseModel(modelToSave);
         setIsEditing(false);
         setCurrentModel(null);
         setSelectedFile(null);
@@ -92,7 +166,7 @@ const DesignGallery: React.FC = () => {
         setAnalyzing(false);
         
         window.dispatchEvent(new CustomEvent('app-notification', { 
-          detail: { message: 'Diseño guardado correctamente y catálogo actualizado', type: 'success' } 
+          detail: { message: 'Diseño guardado correctamente en el catálogo', type: 'success' } 
         }));
       } catch (error) {
         console.error("Error saving model:", error);
@@ -104,128 +178,16 @@ const DesignGallery: React.FC = () => {
     }
   };
 
-  const runAIAnalysis = async (base64: string, type: string) => {
-    setAnalyzing(true);
-    setUploadProgress(5);
-    setAnalysisStatus('Estableciendo túnel con Madacas AI...');
-    
-    try {
-      // Timeline sequence simulator
-      const runTimeline = async () => {
-        const steps = [
-          { p: 15, s: 'Escaneando estructura del documento...' },
-          { p: 30, s: 'Identificando nombre del modelo...' },
-          { p: 45, s: 'Calculando superficie y dimensiones...' },
-          { p: 60, s: 'Extrayendo valores comerciales...' },
-          { p: 75, s: 'Procesando especificaciones técnicas...' },
-          { p: 90, s: 'Finalizando estructuración JSON...' },
-        ];
-        
-        for (const step of steps) {
-          if (!analyzing) break;
-          await new Promise(r => setTimeout(r, 600));
-          setUploadProgress(step.p);
-          setAnalysisStatus(step.s);
-        }
-      };
-
-      runTimeline();
-
-      const extractedData = await analyzeHouseModelFile(base64, type);
-      
-      setUploadProgress(100);
-      setAnalysisStatus('¡Análisis Completado!');
-      
-      // Ensure especificaciones is an array to prevent crashes
-      const safeSpecs = Array.isArray(extractedData.especificaciones) 
-        ? extractedData.especificaciones.map(s => ({
-            descripcion: s.descripcion || 'Sin descripción',
-            id: uuid(),
-            precio_unitario: Number(s.precio_unitario) || 0,
-            cantidad: Number(s.cantidad) || 0,
-            unidad: s.unidad || 'un',
-            total: (Number(s.cantidad) || 0) * (Number(s.precio_unitario) || 0)
-          }))
-        : [];
-        
-      setCurrentModel(prev => {
-        if (!prev) return prev;
-        
-        const updated = {
-          ...prev,
-          nombre: extractedData.nombre || prev.nombre || '',
-          descripcion: extractedData.descripcion || prev.descripcion || '',
-          superficie_m2: Number(extractedData.superficie_m2) || prev.superficie_m2 || 0,
-          preciobase: Number(extractedData.preciobase) || prev.preciobase || 0,
-          especificaciones: safeSpecs.length > 0 ? safeSpecs : prev.especificaciones
-        };
-        return updated;
-      });
-      
-      window.dispatchEvent(new CustomEvent('app-notification', { 
-        detail: { message: 'Inteligencia Artificial: Datos cargados correctamente', type: 'success' } 
-      }));
-
-      // Small delay to hide bar
-      setTimeout(() => {
-        setAnalyzing(false);
-        setUploadProgress(0);
-      }, 1500);
-
-    } catch (error) {
-      console.error(error);
-      setAnalyzing(false);
-      setUploadProgress(0);
-      window.dispatchEvent(new CustomEvent('app-notification', { 
-        detail: { message: 'Error en el motor de IA Madacas', type: 'error' } 
-      }));
-    }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const fullDataUrl = reader.result as string;
-        const base64 = fullDataUrl.split(',')[1];
-        setSelectedFile({ base64, type: file.type });
-        
-        // Predeterminar imagen si es una imagen
-        if (file.type.startsWith('image/')) {
-          try {
-            const compressed = await compressImage(fullDataUrl, 1024, 0.6); // 1024px, 60% quality
-            setCurrentModel(prev => ({
-              ...prev,
-              imagen_url: compressed
-            }));
-          } catch (err) {
-            console.error("Error compressing image:", err);
-            // Fallback to original if compression fails, but warn (actually it might fail Firestore)
-            setCurrentModel(prev => ({
-              ...prev,
-              imagen_url: fullDataUrl
-            }));
-          }
-        }
-
-        // Auto-run analysis
-        await runAIAnalysis(base64, file.type);
-      };
-      reader.readAsDataURL(file);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const filteredModels = models.filter(m => 
-    m.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const startBudget = async (model: HouseModel) => {
+    const rate = getModelRate(model);
+    const calculatedTotal = calculateTotalBase(model);
+
+    const modelForBudget: HouseModel = {
+      ...model,
+      preciobase: calculatedTotal,
+      valor_m2_sugerido: rate
+    };
+
     if (selectedClient) {
       const updatedClient: Client = {
         ...selectedClient,
@@ -235,45 +197,116 @@ const DesignGallery: React.FC = () => {
       window.localStorage.setItem('pending_quote_client_id', selectedClient.id);
       window.localStorage.removeItem('selected_client_id');
     }
-    // Dispatch event to change view to budgets and pass the selected model
+
+    sessionStorage.setItem('prefill_house_model', JSON.stringify(modelForBudget));
+    sessionStorage.setItem('prefill_valor_m2', rate.toString());
+    sessionStorage.setItem('prefill_superficie_m2', model.superficie_m2.toString());
+    sessionStorage.setItem('prefill_monto_base', calculatedTotal.toString());
+
+    // Switch view to budgets
     window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }));
-    // Store in session or local storage to pre-fill
-    sessionStorage.setItem('prefill_house_model', JSON.stringify(model));
   };
+
+  // Multi-model combination logic
+  const [combinationCart, setCombinationCart] = useState<HouseModel[]>([]);
+
+  const toggleModelInCombination = (model: HouseModel) => {
+    setCombinationCart(prev => {
+      const exists = prev.some(m => m.id === model.id);
+      if (exists) {
+        return prev.filter(m => m.id !== model.id);
+      } else {
+        return [...prev, model];
+      }
+    });
+  };
+
+  const startCombinedBudget = async () => {
+    if (combinationCart.length === 0) return;
+
+    if (selectedClient) {
+      const updatedClient: Client = {
+        ...selectedClient,
+        etapa_venta: 'Personalización'
+      };
+      await saveClient(updatedClient);
+      window.localStorage.setItem('pending_quote_client_id', selectedClient.id);
+      window.localStorage.removeItem('selected_client_id');
+    }
+
+    const modules: CombinedModelModule[] = combinationCart.map((m, idx) => {
+      const rate = getModelRate(m);
+      const subtotal = Math.round(m.superficie_m2 * rate);
+      let defaultRol = 'Principal';
+      if (idx === 1) defaultRol = 'Cabaña / Módulo 2';
+      else if (idx > 1) defaultRol = `Módulo ${idx + 1}`;
+
+      return {
+        id: uuid(),
+        model_id: m.id,
+        nombre: m.nombre,
+        superficie_m2: m.superficie_m2,
+        valor_m2: rate,
+        subtotal,
+        rol: defaultRol,
+        categoria: m.categoria,
+        imagen_url: m.imagen_url
+      };
+    });
+
+    sessionStorage.removeItem('prefill_house_model');
+    sessionStorage.setItem('prefill_combined_models', JSON.stringify(modules));
+
+    window.dispatchEvent(new CustomEvent('app-view-change', { detail: 'budgets' }));
+  };
+
+  const filteredModels = useMemo(() => {
+    return models.filter(m => {
+      const matchesSearch = 
+        m.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        m.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (m.categoria && m.categoria.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      const matchesCat = selectedCategory === 'Todos' || m.categoria === selectedCategory;
+
+      return matchesSearch && matchesCat;
+    });
+  }, [models, searchTerm, selectedCategory]);
 
   const handlePrintModel = (model: HouseModel) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const specsHtml = (model.especificaciones || []).map(item => `
-      <tr>
-        <td style="padding: 10px; border-bottom: 1px solid #eee;">${item.descripcion}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">${item.cantidad} ${item.unidad}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$${item.precio_unitario.toLocaleString('es-CL')}</td>
-      </tr>
-    `).join('');
+    const rate = getModelRate(model);
+    const total = calculateTotalBase(model);
 
     printWindow.document.write(`
       <html>
         <head>
-          <title>Ficha Técnica - ${model.nombre}</title>
+          <title>Ficha Técnica Comercial - ${model.nombre}</title>
           <style>
-            body { font-family: sans-serif; padding: 40px; color: #333; }
-            .header { border-bottom: 4px solid #10b981; padding-bottom: 20px; margin-bottom: 30px; }
-            .model-info h1 { margin: 0; color: #10b981; text-transform: uppercase; font-style: italic; }
-            .hero-img { width: 100%; max-height: 400px; object-fit: cover; border-radius: 20px; margin-bottom: 30px; }
-            .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 40px; }
-            .box { background: #f8fafc; padding: 25px; border-radius: 15px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background: #f1f5f9; padding: 10px; text-align: left; }
-            .total { font-size: 1.8em; font-weight: bold; color: #10b981; margin-top: 20px; text-align: right; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #1e293b; }
+            .header { border-bottom: 3px solid #059669; padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .header h1 { margin: 0; color: #059669; font-size: 24px; text-transform: uppercase; }
+            .header p { margin: 4px 0 0; font-size: 11px; color: #64748b; font-weight: bold; }
+            .hero-img { width: 100%; max-height: 380px; object-fit: cover; border-radius: 16px; margin-bottom: 25px; border: 1px solid #e2e8f0; }
+            .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 25px; }
+            .box { background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; }
+            .box h3 { margin-top: 0; font-size: 14px; text-transform: uppercase; color: #0f172a; border-bottom: 1px solid #cbd5e1; padding-bottom: 8px; }
+            ul { padding-left: 18px; font-size: 12px; line-height: 1.6; }
+            .calc-box { background: #ecfdf5; border: 1.5px solid #10b981; padding: 18px; border-radius: 12px; margin-top: 15px; }
+            .calc-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+            .calc-total { border-top: 2px solid #059669; padding-top: 8px; margin-top: 8px; font-size: 16px; font-weight: 800; color: #065f46; display: flex; justify-content: space-between; }
           </style>
         </head>
         <body>
           <div class="header">
-            <div class="model-info">
+            <div>
               <h1>${model.nombre}</h1>
-              <p>CATÁLOGO DE DISEÑOS MADECAS</p>
+              <p>CATÁLOGO DE MODELOS PREFABRICADOS MADECAS • OSORNO / PURRANQUE</p>
+            </div>
+            <div style="text-align: right; font-size: 11px; color: #64748b;">
+              Fecha: ${new Date().toLocaleDateString('es-CL')}
             </div>
           </div>
 
@@ -281,32 +314,44 @@ const DesignGallery: React.FC = () => {
 
           <div class="grid">
             <div class="box">
-              <h3>Descripción General</h3>
-              <p>${model.descripcion || 'Sin descripción.'}</p>
+              <h3>Descripción y Distribución</h3>
+              <p style="font-size: 13px; line-height: 1.6; color: #334155;">${model.descripcion}</p>
               
-              <h3>Especificaciones Técnicas</h3>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Partida</th>
-                    <th style="text-align: right;">Cant/Un</th>
-                    <th style="text-align: right;">Unitario</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${specsHtml}
-                </tbody>
-              </table>
+              <h3>Características del Pack Básico Incluido</h3>
+              <ul>
+                ${(model.caracteristicas_pack_basico || MADECAS_PACK_BASICO_SPECS).map(s => `<li>${s}</li>`).join('')}
+              </ul>
+
+              ${model.superficie_m2 >= MADECAS_PROMO_THRESHOLD_M2 ? `
+                <div style="background: #fffbeb; border: 1px solid #fef08a; padding: 12px; border-radius: 8px; font-size: 12px; color: #854d0e; font-weight: bold; margin-top: 15px;">
+                  🎁 PROMO INCLUIDA: Todas las casas de 66 m² o más se entregan pintadas con impregnante antihongos y repelente (color a elección) sin costo.
+                </div>
+              ` : ''}
             </div>
+
             <div class="box">
-              <h3>Detalles Base</h3>
-              <p><strong>Superficie:</strong> ${model.superficie_m2} m²</p>
-              <p><strong>Actualizado:</strong> ${new Date(model.fecha_creacion).toLocaleDateString()}</p>
-              
-              <div class="total">
-                VALOR VENTA BASE:<br>
-                $${model.preciobase.toLocaleString('es-CL')}
+              <h3>Cálculo Comercial Estimado</h3>
+              <p style="font-size: 12px; margin-bottom: 5px;"><strong>Superficie Construida:</strong> ${model.superficie_m2} m²</p>
+              <p style="font-size: 12px; margin-bottom: 5px;"><strong>Categoría:</strong> ${model.categoria || 'Estándar'}</p>
+              <p style="font-size: 12px; margin-bottom: 15px;"><strong>Distribución:</strong> ${model.dormitorios || '2 dorm.'} • ${model.banos || 1} baño(s)</p>
+
+              <div class="calc-box">
+                <div class="calc-row">
+                  <span>Metros Cuadrados:</span>
+                  <strong>${model.superficie_m2} m²</strong>
+                </div>
+                <div class="calc-row">
+                  <span>Valor estimado por m²:</span>
+                  <strong>$${rate.toLocaleString('es-CL')} CLP</strong>
+                </div>
+                <div class="calc-total">
+                  <span>Total Base Estimado:</span>
+                  <span>$${total.toLocaleString('es-CL')} CLP</span>
+                </div>
               </div>
+              <p style="font-size: 10px; color: #64748b; margin-top: 10px; text-align: center;">
+                *El valor final se complementa según los mejoramientos adicionales y partidas seleccionadas en la cotización.
+              </p>
             </div>
           </div>
 
@@ -319,73 +364,143 @@ const DesignGallery: React.FC = () => {
     printWindow.document.close();
   };
 
-  const [viewingModel, setViewingModel] = useState<HouseModel | null>(null);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="animate-spin text-emerald-500" size={40} />
-      </div>
-    );
-  }
-
   const ModelDetailModal = () => {
     if (!viewingModel) return null;
+    const rate = getModelRate(viewingModel);
+    const total = calculateTotalBase(viewingModel);
+
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setViewingModel(null)} />
-        <div className="bg-white w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[3rem] shadow-2xl relative z-10 p-10 border border-slate-100">
-           <div className="flex justify-between items-center mb-8">
-              <h2 className="text-3xl font-black text-slate-800 uppercase italic tracking-tighter">{viewingModel.nombre}</h2>
-              <button onClick={() => setViewingModel(null)} className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-slate-600">
-                <X size={20} />
-              </button>
-           </div>
-           
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-              <div className="rounded-[2.5rem] overflow-hidden border border-slate-100 shadow-xl">
-                 {viewingModel.imagen_url ? (
-                   <img src={viewingModel.imagen_url} className="w-full h-full object-cover" />
-                 ) : (
-                   <div className="w-full aspect-square bg-slate-50 flex items-center justify-center text-slate-300">
-                      <ImageIcon size={100} />
-                   </div>
-                 )}
+        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setViewingModel(null)} />
+        <div className="bg-white w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl relative z-10 p-6 md:p-8 border border-slate-100">
+          <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
+            <div>
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-emerald-200">
+                {viewingModel.categoria || 'Modelo Madecas'}
+              </span>
+              <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight mt-1">{viewingModel.nombre}</h2>
+            </div>
+            <button onClick={() => setViewingModel(null)} className="p-2 bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600">
+              <X size={20} />
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-4">
+              <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm aspect-video bg-slate-100 relative">
+                {viewingModel.imagen_url ? (
+                  <img src={viewingModel.imagen_url} alt={viewingModel.nombre} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-300">
+                    <ImageIcon size={60} />
+                  </div>
+                )}
               </div>
-              <div className="space-y-6">
-                 <div>
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Descripción General</h4>
-                    <p className="text-slate-600 leading-relaxed">{viewingModel.descripcion || 'Sin descripción.'}</p>
-                 </div>
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                       <p className="text-[10px] font-black text-slate-400 uppercase">Superficie</p>
-                       <p className="text-xl font-black text-slate-800">{viewingModel.superficie_m2} m²</p>
-                    </div>
-                    <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
-                       <p className="text-[10px] font-black text-emerald-400 uppercase">Precio Base</p>
-                       <p className="text-xl font-black text-emerald-600">${viewingModel.preciobase.toLocaleString()}</p>
-                    </div>
-                 </div>
-                 <div>
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Especificaciones Destacadas</h4>
-                    <div className="space-y-2">
-                       {viewingModel.especificaciones?.slice(0, 8).map((spec, i) => (
-                         <div key={i} className="flex justify-between items-center text-sm p-3 bg-slate-50 rounded-xl border border-slate-100">
-                            <span className="font-bold text-slate-700 italic">{spec.descripcion}</span>
-                            <span className="text-emerald-600 font-black">${spec.precio_unitario.toLocaleString()}</span>
-                         </div>
-                       ))}
-                    </div>
-                 </div>
-                 <button 
-                   onClick={() => startBudget(viewingModel)}
-                   className="w-full py-5 bg-emerald-500 text-white rounded-[2rem] font-black text-xs uppercase tracking-[0.3em] shadow-xl shadow-emerald-100 hover:bg-emerald-600 transition-all"
-                 >
-                    Continuar a Presupuesto
-                 </button>
+
+              {/* Dynamic Price Box */}
+              <div className="bg-emerald-50/80 p-5 rounded-2xl border border-emerald-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-900 uppercase flex items-center gap-1.5">
+                    <Calculator size={16} className="text-emerald-700" />
+                    Cálculo Dinámico por m²
+                  </span>
+                  <span className="text-xs font-black text-emerald-700">{viewingModel.superficie_m2} m²</span>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="text-xs text-slate-600 font-medium">Valor por metro:</span>
+                  <div className="relative flex-1">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">$</span>
+                    <input
+                      type="number"
+                      value={rate}
+                      onChange={(e) => handleModelRateChange(viewingModel.id, Number(e.target.value))}
+                      className="w-full pl-6 pr-2 py-1.5 bg-white border border-emerald-300 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-baseline pt-2 border-t border-emerald-200">
+                  <span className="text-xs font-bold text-slate-700">Total Modelo Base:</span>
+                  <span className="text-2xl font-black text-emerald-700">
+                    ${total.toLocaleString('es-CL')} <span className="text-xs font-normal text-slate-500">CLP</span>
+                  </span>
+                </div>
               </div>
-           </div>
+
+              {viewingModel.superficie_m2 >= MADECAS_PROMO_THRESHOLD_M2 && (
+                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-start gap-2 text-xs text-amber-900 font-medium">
+                  <Gift size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                  <span>{MADECAS_PROMO_TEXT}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Descripción de la Vivienda</h4>
+                <p className="text-slate-600 text-sm leading-relaxed">{viewingModel.descripcion || 'Sin descripción detallada.'}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Distribución</span>
+                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mt-0.5">
+                    <BedDouble size={14} className="text-slate-500" />
+                    {viewingModel.dormitorios || '2 dormitorios'}
+                  </p>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Baños</span>
+                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mt-0.5">
+                    <Bath size={14} className="text-slate-500" />
+                    {viewingModel.banos || 1} Baño(s)
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Características Pack Básico Incluidas</h4>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {(viewingModel.caracteristicas_pack_basico || MADECAS_PACK_BASICO_SPECS).map((spec, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                      <CheckCircle2 size={13} className="text-emerald-600 shrink-0 mt-0.5" />
+                      <span>{spec}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 flex flex-wrap gap-2">
+                <button
+                  onClick={() => handlePrintModel(viewingModel)}
+                  className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition"
+                >
+                  <FileText size={15} />
+                  <span>Ficha PDF</span>
+                </button>
+                <button
+                  onClick={() => toggleModelInCombination(viewingModel)}
+                  className={cn(
+                    "px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition border",
+                    combinationCart.some(m => m.id === viewingModel.id)
+                      ? "bg-emerald-50 text-emerald-800 border-emerald-300 ring-1 ring-emerald-400"
+                      : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                  )}
+                >
+                  <Layers size={15} />
+                  <span>{combinationCart.some(m => m.id === viewingModel.id) ? '✓ En Combinación' : '+ Combinar con otros'}</span>
+                </button>
+                <button 
+                  onClick={() => startBudget(viewingModel)}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-emerald-200 transition"
+                >
+                  <span>Personalizar y Cotizar</span>
+                  <ArrowRight size={15} />
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -395,374 +510,475 @@ const DesignGallery: React.FC = () => {
     if (!previewImage) return null;
     return (
       <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="absolute inset-0 bg-slate-900/90 backdrop-blur-md" 
-          onClick={() => setPreviewImage(null)} 
-        />
-        <motion.div 
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="relative z-[210] max-w-5xl max-h-[90vh] w-full flex items-center justify-center"
-          onClick={() => setPreviewImage(null)}
-        >
-          <img src={previewImage} alt="Full Preview" className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border-4 border-white/10" />
+        <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-md" onClick={() => setPreviewImage(null)} />
+        <div className="relative z-[210] max-w-5xl max-h-[90vh] w-full flex items-center justify-center p-2" onClick={() => setPreviewImage(null)}>
+          <img src={previewImage} alt="Full Preview" className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl border-2 border-white/20" />
           <button 
             onClick={() => setPreviewImage(null)}
-            className="absolute -top-12 right-0 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all"
+            className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-black/90 text-white rounded-full transition"
           >
-            <X size={24} />
+            <X size={20} />
           </button>
-        </motion.div>
+        </div>
       </div>
     );
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="animate-spin text-emerald-500" size={40} />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8 p-4 max-w-7xl mx-auto font-sans">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
       <ImagePreviewModal />
       <ModelDetailModal />
 
+      {/* Active Client Selection Banner */}
       {selectedClient && (
-        <div className="bg-blue-600 text-white p-4 rounded-2xl shadow-lg border border-blue-400 flex items-center justify-between animate-in slide-in-from-top-4 duration-300">
-          <div className="flex items-center gap-4">
-             <div className="bg-white/20 p-2 rounded-xl">
-                <Search size={24} className="text-white" />
-             </div>
-             <div>
-                <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Selección de diseño activa para:</p>
-                <h4 className="text-xl font-black italic uppercase tracking-tight">{selectedClient.nombre}</h4>
-             </div>
+        <div className="bg-emerald-600 text-white p-4 rounded-2xl shadow-md border border-emerald-500 flex items-center justify-between animate-in slide-in-from-top-4 duration-200">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 p-2 rounded-xl">
+              <CheckCircle2 size={20} className="text-white" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-wider text-emerald-100">Paso 2: Selección de Modelo para Cliente Activo</p>
+              <h4 className="text-lg font-bold">{selectedClient.nombre} <span className="text-xs font-normal opacity-80">(RUT: {selectedClient.rut})</span></h4>
+            </div>
           </div>
           <button 
             onClick={() => {
               window.localStorage.removeItem('selected_client_id');
               setSelectedClient(null);
             }}
-            className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+            className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition"
           >
-            Cancelar Selección
+            Cambiar Cliente
           </button>
         </div>
       )}
 
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
-        <div>
-          <h1 className="text-4xl font-black text-slate-800 tracking-tighter uppercase italic flex items-center gap-3">
-            <Home className="text-emerald-500" />
-            Galería de Diseños
-          </h1>
-          <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-2 flex items-center gap-2">
-            Modelos de Casas Prefabricadas y Catálogo
-          </p>
+      {/* Header & Global M2 Rate Configuration */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+              <Home className="text-emerald-600" />
+              Diseños y Modelos de Casas Prefabricadas
+            </h1>
+            <p className="text-slate-500 text-xs font-medium mt-1">
+              Catálogo oficial Madecas 2025. Los valores se calculan dinámicamente por metro cuadrado (m² × valor/m²).
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={handleCreateNew}
+              className="px-4 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-slate-800 transition shadow-sm"
+            >
+              <Plus size={16} />
+              <span>Agregar Nuevo Modelo</span>
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Buscar modelos..." 
-              className="pl-12 pr-4 py-3 bg-slate-50 rounded-2xl border border-slate-100 focus:border-emerald-500 outline-none w-64 transition-all font-medium text-sm"
+
+        {/* Global Value per m2 Control Bar */}
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Calculator size={18} className="text-emerald-600" />
+            <div>
+              <span className="text-xs font-bold text-slate-800">Tarifa Base por Metro Cuadrado:</span>
+              <p className="text-[11px] text-slate-500">Ajusta el valor por m² para cotizar los modelos de inmediato.</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 shadow-sm">
+              <span className="text-xs font-bold text-slate-400 mr-1">$</span>
+              <input
+                type="number"
+                value={globalValorM2}
+                onChange={(e) => setGlobalValorM2(Math.max(1, Number(e.target.value)))}
+                className="w-28 text-xs font-bold text-slate-800 outline-none"
+              />
+              <span className="text-[11px] font-bold text-slate-400">/ m²</span>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {PRESET_VALORES_M2.map(preset => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => setGlobalValorM2(preset.valor)}
+                  className={cn(
+                    "px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition",
+                    globalValorM2 === preset.valor 
+                      ? "bg-emerald-600 text-white shadow-sm" 
+                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                  )}
+                >
+                  {preset.label} (${(preset.valor / 1000).toFixed(0)}k)
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Filters and Search Bar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+            {CATEGORIAS_MODELOS.map(cat => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setSelectedCategory(cat)}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap",
+                  selectedCategory === cat 
+                    ? "bg-slate-900 text-white shadow-sm" 
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                )}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="Buscar por nombre o m²..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
             />
           </div>
-          <button 
-            onClick={handleCreateNew}
-            className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all shadow-xl shadow-slate-200"
-          >
-            <Plus size={18} />
-            Nuevo Diseño
-          </button>
         </div>
-      </header>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {filteredModels.map(model => (
-          <motion.div 
-            key={model.id}
-            layoutId={model.id}
-            className="bg-white rounded-[2.5rem] overflow-hidden border border-slate-100 shadow-xl hover:shadow-2xl transition-all group relative"
-          >
-            <div className="h-64 bg-slate-100 relative overflow-hidden">
-              {model.imagen_url ? (
-                <div className="relative h-full w-full cursor-pointer group/img" onClick={() => setPreviewImage(model.imagen_url!)}>
-                  <img src={model.imagen_url} alt={model.nombre} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                  <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                    <Maximize2 className="text-white" size={32} />
-                  </div>
-                </div>
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
-                  <ImageIcon size={60} />
-                  <span className="text-xs font-black uppercase tracking-widest mt-4">Sin Imagen Principal</span>
-                </div>
-              )}
-              <div className="absolute top-4 right-4 flex gap-2">
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setViewingModel(model); }}
-                  className="p-3 bg-white/90 backdrop-blur-md rounded-2xl text-slate-600 hover:text-emerald-600 transition-colors shadow-lg"
-                  title="Ver Detalle"
-                >
-                  <FileText size={18} />
-                </button>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); handlePrintModel(model); }}
-                  className="p-3 bg-white/90 backdrop-blur-md rounded-2xl text-slate-600 hover:text-orange-600 transition-colors shadow-lg"
-                  title="Imprimir"
-                >
-                  <CreditCard size={18} />
-                </button>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); handleEdit(model); }}
-                  className="p-3 bg-white/90 backdrop-blur-md rounded-2xl text-slate-600 hover:text-emerald-600 transition-colors shadow-lg"
-                >
-                  <Edit3 size={18} />
-                </button>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); handleDelete(model.id); }}
-                  className="p-3 bg-white/90 backdrop-blur-md rounded-2xl text-slate-600 hover:text-rose-600 transition-colors shadow-lg"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-              <div className="absolute bottom-4 left-4">
-                <div className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest shadow-xl">
-                  {model.superficie_m2} m²
-                </div>
-              </div>
-            </div>
-
-            <div className="p-8">
-              <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-tight mb-2 group-hover:text-emerald-600 transition-colors uppercase italic">{model.nombre}</h3>
-              <p className="text-slate-500 text-sm font-medium line-clamp-2 mb-6 leading-relaxed">
-                {model.descripcion || 'Sin descripción detallada disponible para este modelo.'}
-              </p>
-
-              <div className="flex flex-col gap-4 border-t border-slate-50 pt-6">
-                <div className="flex justify-between items-end">
-                  <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Inversión Base</span>
-                  <span className="text-xl font-black text-slate-800">
-                    ${model.preciobase.toLocaleString('es-CL')}
-                  </span>
-                </div>
-                
-                <button 
-                  onClick={() => startBudget(model)}
-                  className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all active:scale-[0.98] shadow-lg shadow-emerald-100"
-                >
-                  Continuar a Presupuesto
-                  <ArrowRight size={18} />
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        ))}
       </div>
 
-      {/* Editor Modal */}
+      {/* Models Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredModels.map(model => {
+          const rate = getModelRate(model);
+          const total = calculateTotalBase(model);
+          const hasPromo = model.superficie_m2 >= MADECAS_PROMO_THRESHOLD_M2;
+
+          return (
+            <div 
+              key={model.id}
+              className="bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col group relative"
+            >
+              {/* Image & Quick Overlays */}
+              <div className="h-56 bg-slate-100 relative overflow-hidden">
+                {model.imagen_url ? (
+                  <div className="h-full w-full cursor-pointer relative" onClick={() => setPreviewImage(model.imagen_url!)}>
+                    <img 
+                      src={model.imagen_url} 
+                      alt={model.nombre} 
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" 
+                    />
+                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Maximize2 className="text-white" size={24} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
+                    <ImageIcon size={48} />
+                    <span className="text-[10px] font-bold uppercase tracking-wider mt-2">Sin Imagen</span>
+                  </div>
+                )}
+
+                {/* Top Badges */}
+                <div className="absolute top-3 left-3 flex flex-col gap-1 items-start">
+                  <span className="bg-slate-900/90 backdrop-blur-sm text-white px-2.5 py-1 rounded-lg font-black text-xs shadow-sm">
+                    {model.superficie_m2} m²
+                  </span>
+                  {hasPromo && (
+                    <span className="bg-amber-500 text-white px-2 py-0.5 rounded-md font-extrabold text-[10px] shadow-sm flex items-center gap-1">
+                      <Gift size={11} /> Promo Pintura Gratis
+                    </span>
+                  )}
+                </div>
+
+                {/* Top Right Quick Actions */}
+                <div className="absolute top-3 right-3 flex items-center gap-1 bg-white/90 backdrop-blur-sm p-1 rounded-xl shadow-sm">
+                  <button 
+                    onClick={() => setViewingModel(model)}
+                    className="p-1.5 text-slate-600 hover:text-emerald-600 rounded-lg transition"
+                    title="Ver Ficha Detallada"
+                  >
+                    <FileText size={15} />
+                  </button>
+                  <button 
+                    onClick={() => handlePrintModel(model)}
+                    className="p-1.5 text-slate-600 hover:text-blue-600 rounded-lg transition"
+                    title="Imprimir Ficha Técnica"
+                  >
+                    <CreditCard size={15} />
+                  </button>
+                  <button 
+                    onClick={() => handleEdit(model)}
+                    className="p-1.5 text-slate-600 hover:text-amber-600 rounded-lg transition"
+                    title="Editar Modelo"
+                  >
+                    <Edit3 size={15} />
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(model.id)}
+                    className="p-1.5 text-slate-600 hover:text-red-600 rounded-lg transition"
+                    title="Eliminar Modelo"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Card Body */}
+              <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded uppercase">
+                      {model.categoria || 'Modelo Madecas'}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      {model.dormitorios || '2 dorm.'} • {model.banos || 1} baño
+                    </span>
+                  </div>
+
+                  <h3 className="text-base font-black text-slate-800 leading-tight group-hover:text-emerald-700 transition">
+                    {model.nombre}
+                  </h3>
+                  
+                  <p className="text-slate-500 text-xs mt-1.5 line-clamp-2 leading-relaxed">
+                    {model.descripcion || 'Sin descripción detallada.'}
+                  </p>
+                </div>
+
+                {/* Dynamic Price Calculation Box */}
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[10px] font-bold uppercase text-slate-400">Valor Estimado m²</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs font-bold text-slate-700">${rate.toLocaleString('es-CL')}</span>
+                      <span className="text-[10px] text-slate-400">/m²</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-baseline justify-between pt-1 border-t border-slate-200">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase text-slate-500">Total Base:</span>
+                      <p className="text-[10px] text-slate-400">{model.superficie_m2} m² × ${rate.toLocaleString()}</p>
+                    </div>
+                    <span className="text-lg font-black text-emerald-700">
+                      ${total.toLocaleString('es-CL')} <span className="text-[10px] font-normal text-slate-500">CLP</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Actions: Cotizar o Combinar con otros modelos */}
+                <div className="flex gap-2 pt-1">
+                  <button 
+                    onClick={() => startBudget(model)}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-200 transition"
+                  >
+                    <span>Cotizar</span>
+                    <ArrowRight size={14} />
+                  </button>
+                  <button 
+                    onClick={() => toggleModelInCombination(model)}
+                    title={combinationCart.some(m => m.id === model.id) ? 'Quitar de la combinación' : 'Combinar con otros modelos'}
+                    className={cn(
+                      "px-3 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition border",
+                      combinationCart.some(m => m.id === model.id)
+                        ? "bg-emerald-700 text-white border-emerald-800 shadow-sm"
+                        : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                    )}
+                  >
+                    <Layers size={14} />
+                    <span>{combinationCart.some(m => m.id === model.id) ? '✓ Combinado' : '+ Combinar'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Editor Modal for Adding / Editing House Models */}
       <AnimatePresence>
         {isEditing && currentModel && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsEditing(false)}
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="bg-white w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[3rem] shadow-2xl relative z-10 flex flex-col md:flex-row border border-slate-100"
-            >
-              {/* Left Side: Upload & Media */}
-              <div className="w-full md:w-2/5 bg-slate-50 p-10 flex flex-col gap-8 border-r border-slate-100">
-                <div className="space-y-4">
-                  <h3 className="text-xl font-black text-slate-800 uppercase italic tracking-tighter">Documentación & IA</h3>
-                  <p className="text-slate-400 text-xs font-bold leading-relaxed uppercase">Sube el PDF o Imagen de las especificaciones y deja que la IA extraiga los datos automáticamente.</p>
-                </div>
-
-                <div className="group relative aspect-square bg-white rounded-[2rem] border-4 border-dashed border-slate-200 flex flex-col items-center justify-center p-6 text-center transition-all hover:border-emerald-400 hover:bg-emerald-50 group">
-                  {analyzing ? (
-                    <div className="flex flex-col items-center w-full">
-                      <div className="relative w-24 h-24 mb-6">
-                        <svg className="w-full h-full" viewBox="0 0 100 100">
-                          <circle 
-                            className="text-slate-200 stroke-current" 
-                            strokeWidth="8" 
-                            cx="50" cy="50" r="40" fill="transparent" 
-                          />
-                          <circle 
-                            className="text-emerald-500 stroke-current transition-all duration-500 ease-out" 
-                            strokeWidth="8" 
-                            strokeDasharray={`${uploadProgress * 2.51}, 251.2`}
-                            strokeLinecap="round" 
-                            cx="50" cy="50" r="40" fill="transparent" 
-                            transform="rotate(-90 50 50)"
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-lg font-black text-slate-700">{uploadProgress}%</span>
-                        </div>
-                      </div>
-                      <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">{analysisStatus}</span>
-                      
-                      <div className="w-full h-1 bg-slate-100 rounded-full mt-6 overflow-hidden">
-                        <motion.div 
-                          className="h-full bg-emerald-500" 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${uploadProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  ) : currentModel.imagen_url ? (
-                    <div className="relative w-full h-full cursor-zoom-in group/preview" onClick={() => setPreviewImage(currentModel.imagen_url!)}>
-                      <img src={currentModel.imagen_url} alt="preview" className="w-full h-full object-cover rounded-xl" />
-                      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/preview:opacity-100 transition-opacity flex items-center justify-center rounded-xl">
-                        <span className="text-white font-black text-xs uppercase tracking-widest bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">Click para ampliar</span>
-                      </div>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setSelectedFile(null); setCurrentModel({...currentModel, imagen_url: undefined}); }}
-                        className="absolute top-2 right-2 p-2 bg-rose-500 text-white rounded-lg opacity-0 group-hover/preview:opacity-100 transition-all shadow-lg"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="bg-slate-100 p-6 rounded-full group-hover:bg-emerald-100 group-hover:scale-110 transition-all mb-4">
-                        <Upload size={32} className="text-slate-400 group-hover:text-emerald-500" />
-                      </div>
-                      <span className="text-xs font-black text-slate-600 uppercase tracking-widest">Cargar Planos / PDF</span>
-                    </>
-                  )}
-                  <input 
-                    type="file" 
-                    onChange={handleFileUpload}
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                    accept="image/*,application/pdf"
-                  />
-                </div>
-
-                <button 
-                  onClick={() => selectedFile && runAIAnalysis(selectedFile.base64, selectedFile.type)}
-                  disabled={analyzing || !selectedFile}
-                  className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:bg-slate-300 shadow-xl shadow-indigo-100"
-                >
-                  <Sparkles size={18} />
-                  IA COMMERCIAL PRO
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsEditing(false)} />
+            <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl relative z-10 p-6 md:p-8 border border-slate-200 space-y-5">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-xl font-black text-slate-800">
+                  {currentModel.id && models.some(m => m.id === currentModel.id) ? 'Editar Modelo' : 'Nuevo Modelo de Casa'}
+                </h3>
+                <button onClick={() => setIsEditing(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                  <X size={20} />
                 </button>
               </div>
 
-              {/* Right Side: Form */}
-              <div className="w-full md:w-3/5 p-12">
-                <div className="flex justify-between items-center mb-10">
-                  <h2 className="text-3xl font-black text-slate-800 uppercase italic tracking-tighter">Configurar Modelo</h2>
-                  <button onClick={() => setIsEditing(false)} className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-slate-600 transition-all">
-                    <X size={20} />
-                  </button>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Nombre del Modelo *</label>
+                  <input
+                    type="text"
+                    required
+                    value={currentModel.nombre || ''}
+                    onChange={(e) => setCurrentModel({ ...currentModel, nombre: e.target.value })}
+                    placeholder="Ej: Casa 54 m² Modelo Contemporáneo"
+                    className="w-full p-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
                 </div>
 
-                <div className="grid grid-cols-2 gap-6 mb-8">
-                  <div className="col-span-2 space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre del Modelo</label>
-                    <input 
-                      type="text" 
-                      className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] border border-slate-100 outline-none focus:border-emerald-500 font-bold italic text-slate-700"
-                      value={currentModel.nombre}
-                      onChange={(e) => setCurrentModel({...currentModel, nombre: e.target.value})}
-                      placeholder="Ej: MODELO BASIC 36 MT2"
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Superficie (m²) *</label>
+                    <input
+                      type="number"
+                      required
+                      value={currentModel.superficie_m2 || 36}
+                      onChange={(e) => setCurrentModel({ ...currentModel, superficie_m2: Number(e.target.value) })}
+                      className="w-full p-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Superficie (m²)</label>
-                    <input 
-                      type="number" 
-                      className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] border border-slate-100 outline-none focus:border-emerald-500 font-bold"
-                      value={currentModel.superficie_m2}
-                      onChange={(e) => setCurrentModel({...currentModel, superficie_m2: Number(e.target.value)})}
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Valor por m² Sugerido</label>
+                    <input
+                      type="number"
+                      value={currentModel.valor_m2_sugerido || globalValorM2}
+                      onChange={(e) => setCurrentModel({ ...currentModel, valor_m2_sugerido: Number(e.target.value) })}
+                      className="w-full p-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor Venta Base ($)</label>
-                    <input 
-                      type="number" 
-                      className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] border border-slate-100 outline-none focus:border-emerald-500 font-bold"
-                      value={currentModel.preciobase}
-                      onChange={(e) => setCurrentModel({...currentModel, preciobase: Number(e.target.value)})}
-                    />
-                  </div>
-
-                  <div className="col-span-2 space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Descripción / Notas</label>
-                    <textarea 
-                      className="w-full px-6 py-4 bg-slate-50 rounded-[1.5rem] border border-slate-100 outline-none focus:border-emerald-500 font-medium text-sm min-h-[120px]"
-                      value={currentModel.descripcion}
-                      onChange={(e) => setCurrentModel({...currentModel, descripcion: e.target.value})}
-                      placeholder="Detalles sobre terminaciones, dormitorios, etc."
-                    />
-                  </div>
-                </div>
-
-                {/* Specs Table */}
-                <div className="mb-10">
-                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center justify-between">
-                    Especificaciones Técnicas
-                    <span className="bg-slate-100 px-2 py-1 rounded text-[10px]">Total items: {currentModel.especificaciones?.length || 0}</span>
-                  </h4>
-                  <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-                    {currentModel.especificaciones?.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 group">
-                        <div className="flex-1 flex flex-col">
-                          <span className="text-sm font-bold text-slate-700 italic">{item.descripcion}</span>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase">{item.cantidad} {item.unidad}</span>
-                        </div>
-                        <span className="font-black text-slate-700 text-sm">${item.precio_unitario.toLocaleString('es-CL')}</span>
-                        <button 
-                          onClick={() => {
-                            const newSpecs = [...(currentModel.especificaciones || [])];
-                            newSpecs.splice(idx, 1);
-                            setCurrentModel({...currentModel, especificaciones: newSpecs});
-                          }}
-                          className="p-2 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                    ))}
-                    {(!currentModel.especificaciones || currentModel.especificaciones.length === 0) && (
-                      <div className="p-8 text-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-100">
-                        <p className="text-xs font-bold text-slate-400 uppercase">Sin especificaciones cargadas</p>
-                      </div>
-                    )}
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Categoría</label>
+                    <select
+                      value={currentModel.categoria || 'Contemporáneo'}
+                      onChange={(e) => setCurrentModel({ ...currentModel, categoria: e.target.value })}
+                      className="w-full p-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                    >
+                      <option value="Básico 2 Aguas">Básico 2 Aguas</option>
+                      <option value="Básico 4 Aguas">Básico 4 Aguas</option>
+                      <option value="Contemporáneo">Contemporáneo</option>
+                      <option value="Premium">Premium</option>
+                      <option value="Básico 6 Aguas">Básico 6 Aguas</option>
+                    </select>
                   </div>
                 </div>
 
-                <div className="flex gap-4">
-                  <button 
-                    onClick={() => setIsEditing(false)}
-                    className="flex-1 py-5 bg-slate-50 text-slate-400 rounded-[2rem] font-black text-xs uppercase tracking-widest hover:bg-slate-100 transition-all"
-                  >
-                    Cancelar
-                  </button>
-                  <button 
-                    onClick={handleSave}
-                    className="flex-2 py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xs uppercase tracking-[0.3em] hover:bg-slate-800 transition-all shadow-2xl shadow-slate-200"
-                  >
-                    Actualizar Catálogo
-                  </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Dormitorios</label>
+                    <input
+                      type="text"
+                      value={currentModel.dormitorios || ''}
+                      onChange={(e) => setCurrentModel({ ...currentModel, dormitorios: e.target.value })}
+                      placeholder="Ej: 2 a 3 dormitorios"
+                      className="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Baños</label>
+                    <input
+                      type="number"
+                      value={currentModel.banos || 1}
+                      onChange={(e) => setCurrentModel({ ...currentModel, banos: Number(e.target.value) })}
+                      className="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Descripción Comercial</label>
+                  <textarea
+                    rows={3}
+                    value={currentModel.descripcion || ''}
+                    onChange={(e) => setCurrentModel({ ...currentModel, descripcion: e.target.value })}
+                    placeholder="Detalla la arquitectura, características y distribución..."
+                    className="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-600 mb-1">URL de Imagen del Modelo</label>
+                  <input
+                    type="text"
+                    value={currentModel.imagen_url || ''}
+                    onChange={(e) => setCurrentModel({ ...currentModel, imagen_url: e.target.value })}
+                    placeholder="/assets/aistudio/... o https://..."
+                    className="w-full p-2.5 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
                 </div>
               </div>
-            </motion.div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-semibold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition shadow-sm"
+                >
+                  Guardar Modelo
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* Floating Multi-Model Combination Tray */}
+      {combinationCart.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-11/12 max-w-4xl bg-slate-900/95 backdrop-blur-md text-white p-4 sm:p-5 rounded-2xl shadow-2xl border border-emerald-500/50 flex flex-col sm:flex-row items-center justify-between gap-4 animate-in slide-in-from-bottom-6 duration-200">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500 text-slate-900 flex items-center justify-center font-black shrink-0">
+              <Layers size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-400">
+                  Combinación de {combinationCart.length} Modelos Seleccionada
+                </span>
+                <span className="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-bold">
+                  {combinationCart.reduce((sum, m) => sum + m.superficie_m2, 0)} m² Totales
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5 line-clamp-1">
+                {combinationCart.map((m, idx) => `Módulo ${idx + 1}: ${m.nombre} (${m.superficie_m2}m²)`).join(' + ')}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button
+              onClick={() => setCombinationCart([])}
+              className="px-3 py-2 text-xs font-bold text-slate-400 hover:text-white transition"
+            >
+              Vaciar
+            </button>
+            <button
+              onClick={startCombinedBudget}
+              className="flex-1 sm:flex-none px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition"
+            >
+              <span>Cotizar Combinación ({combinationCart.reduce((s, m) => s + m.superficie_m2, 0)} m²)</span>
+              <ArrowRight size={15} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

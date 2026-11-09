@@ -120,6 +120,18 @@ export interface BudgetItem {
   total: number;
 }
 
+export interface CombinedModelModule {
+  id: string;
+  model_id: string;
+  nombre: string;
+  superficie_m2: number;
+  valor_m2: number;
+  subtotal: number;
+  rol?: 'Principal' | 'Secundario' | 'Ampliación' | 'Cabaña' | 'Quincho' | 'Módulo' | string;
+  categoria?: string;
+  imagen_url?: string;
+}
+
 export interface Budget {
   id: string;
   cliente_id: string;
@@ -135,11 +147,22 @@ export interface Budget {
   fecha_inicio_obra?: string;
   lugar_suscripcion?: string;
   superficie_m2?: number;
+  valor_m2?: number;
+  monto_base_modelo?: number;
+  monto_adicionales?: number;
+  mejoramientos_adicionales?: SelectedImprovement[];
   medidas_radier?: { largo: number; ancho: number };
   es_modelo_fijo?: boolean;
   partidas_adicionales_permitidas?: boolean;
   notas_personalizacion?: string;
   observaciones_negociacion?: string;
+  es_anexo?: boolean;
+  parent_contract_id?: string;
+  tipo_documento?: 'PRESUPUESTO_BASE' | 'PRESUPUESTO_ANEXO';
+  
+  // Multi-model combination support
+  es_combinacion_modelos?: boolean;
+  modelos_combinados?: CombinedModelModule[];
 }
 
 export interface PaymentInstallment {
@@ -186,6 +209,10 @@ export interface Contract {
   fecha_escaneo?: string;
   es_anexo?: boolean;
   parent_contract_id?: string;
+  anexo_nro?: number;
+  anexo_motivo?: string;
+  es_combinacion_modelos?: boolean;
+  modelos_combinados?: CombinedModelModule[];
 }
 
 export interface AppNotification {
@@ -203,14 +230,40 @@ export interface AppTheme {
   name: string;
 }
 
+export interface AdditionalImprovementItem {
+  id: string;
+  codigo: string;
+  titulo: string;
+  descripcion: string;
+  precio_m2: number;
+  unidad: 'm2' | 'global';
+  categoria: 'fundacion' | 'aislacion' | 'techumbre' | 'terminaciones' | 'estructura';
+  beneficio?: string;
+}
+
+export interface SelectedImprovement {
+  improvement_id: string;
+  codigo: string;
+  titulo: string;
+  m2: number;
+  precio_m2: number;
+  total: number;
+  nota?: string;
+}
+
 export interface HouseModel {
   id: string;
   nombre: string;
   descripcion: string;
   superficie_m2: number;
-  preciobase: number;
+  preciobase: number; // For compatibility
+  valor_m2_sugerido?: number;
+  categoria?: 'Básico 2 Aguas' | 'Básico 4 Aguas' | 'Contemporáneo' | 'Premium' | 'Básico 6 Aguas' | string;
+  dormitorios?: string | number;
+  banos?: number;
   imagen_url?: string;
   pdf_url?: string;
+  caracteristicas_pack_basico?: string[];
   especificaciones?: BudgetItem[];
   vendedor_id?: string;
   fecha_creacion: string;
@@ -219,3 +272,4 @@ export interface HouseModel {
 // Helper type for views
 export type ViewState = 'dashboard' | 'hub' | 'map' | 'clients' | 'projects' | 'budgets' | 'contracts' | 'settings' | 'ai-assistant' | 'cubicacion' | 'designs' | 'users' | 'audit';
 export type UserRole = 'vendedor' | 'admin';
+

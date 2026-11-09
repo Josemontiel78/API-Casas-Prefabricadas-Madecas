@@ -1,4 +1,5 @@
 import { Client, Project, Budget, Contract, Vendor, ContractStatus, HouseModel, SystemUser, AuditLog, AuditAction } from '@/types';
+import { MADECAS_OFFICIAL_MODELS } from '@/constants/catalog';
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { 
   collection, 
@@ -221,13 +222,27 @@ export const deleteContract = async (id: string): Promise<void> => {
 // --- House Models ---
 export const getHouseModels = async (): Promise<HouseModel[]> => {
   try {
-    // Models are public for all users to see, but only admins can write
     const q = query(collection(db, COLLECTIONS.HOUSE_MODELS));
     const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as HouseModel));
+    const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as HouseModel));
+    
+    // Purge any older designs and models that are not part of the 11 official models
+    const officialIds = new Set(MADECAS_OFFICIAL_MODELS.map(m => m.id));
+    const legacyDocs = snap.docs.filter(d => !officialIds.has(d.id));
+    if (legacyDocs.length > 0) {
+      legacyDocs.forEach(d => {
+        deleteDoc(d.ref).catch(() => {});
+      });
+    }
+
+    // Return exclusively the official 11 models from the user attachments
+    return MADECAS_OFFICIAL_MODELS.map(om => {
+      const remote = list.find(r => r.id === om.id);
+      return remote ? { ...om, ...remote } : om;
+    });
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, COLLECTIONS.HOUSE_MODELS);
-    return [];
+    return MADECAS_OFFICIAL_MODELS;
   }
 };
 
@@ -401,9 +416,27 @@ export const subscribeToContracts = (callback: (contracts: Contract[]) => void) 
 export const subscribeToHouseModels = (callback: (models: HouseModel[]) => void) => {
   const q = query(collection(db, COLLECTIONS.HOUSE_MODELS));
   return onSnapshot(q, (snap) => {
-    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as HouseModel)));
+    const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as object) } as HouseModel));
+    const officialIds = new Set(MADECAS_OFFICIAL_MODELS.map(m => m.id));
+
+    // Remove any older legacy models that were created prior to the 11 attachments
+    const legacyDocs = snap.docs.filter(d => !officialIds.has(d.id));
+    if (legacyDocs.length > 0) {
+      legacyDocs.forEach(d => {
+        deleteDoc(d.ref).catch(() => {});
+      });
+    }
+
+    // Return strictly the official models
+    const officialOnly = MADECAS_OFFICIAL_MODELS.map(om => {
+      const remote = list.find(r => r.id === om.id);
+      return remote ? { ...om, ...remote } : om;
+    });
+
+    callback(officialOnly);
   }, (err) => {
     handleFirestoreError(err, OperationType.LIST, COLLECTIONS.HOUSE_MODELS);
+    callback(MADECAS_OFFICIAL_MODELS);
   });
 };
 

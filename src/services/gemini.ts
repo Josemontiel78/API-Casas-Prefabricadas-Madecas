@@ -1,35 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
-import { Client, Project, Budget, Vendor, PaymentInstallment, Contract, HouseModel } from "@/types";
-
-const getGeminiClient = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("La API Key de Gemini no está configurada.");
-  }
-  return new GoogleGenAI({ apiKey });
-};
-
-const DEFAULT_MODEL = "gemini-3-flash-preview";
-
-const extractJSON = (text: string) => {
-  try {
-    // Try to find the last occurrence of { and } to get the main JSON object if there's text around it
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start !== -1 && end !== -1 && end > start) {
-      const jsonStr = text.substring(start, end + 1);
-      return JSON.parse(jsonStr);
-    }
-    // Fallback to array match if no object found
-    const match = text.match(/\[[\s\S]*\]/);
-    if (match) return JSON.parse(match[0]);
-    
-    return JSON.parse(text);
-  } catch (e) {
-    console.error("Error parsing extracted JSON:", e, "Raw text:", text);
-    return null;
-  }
-};
+import { Client, Project, Budget, Vendor, PaymentInstallment, Contract, HouseModel, BudgetItem } from "@/types";
 
 export const numberToSpanishWords = (num: number): string => {
   if (num === 0) return "cero";
@@ -43,7 +12,7 @@ export const numberToSpanishWords = (num: number): string => {
     const units = ["", "un", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve"];
     const tens = ["", "diez", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
     const teens = ["diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve"];
-    const hundreds = ["", "cien", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "nevecienos"]; // "nevecienos" or "novecientos" -> let's use standard "novecientos"
+    const hundreds = ["", "cien", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"];
     
     let res = "";
     const h = Math.floor(n / 100);
@@ -141,6 +110,23 @@ export const getBusinessDaysLaterDateString = (startDateStr: string, days: numbe
   return `${String(date.getDate()).padStart(2, '0')} de ${months[date.getMonth()]} de ${date.getFullYear()}`;
 };
 
+export const formatBudgetItemForContract = (item: BudgetItem): string => {
+  const rawUnidad = item.unidad ? item.unidad.trim() : (item.descripcion.toLowerCase().includes('m2') || item.descripcion.toLowerCase().includes('m²') ? 'm²' : 'un');
+  const cantFormatted = Number.isInteger(item.cantidad) ? item.cantidad.toString() : item.cantidad.toFixed(1);
+  const cantStr = `${cantFormatted} ${rawUnidad}`;
+  const unitPriceStr = `$${item.precio_unitario.toLocaleString('es-CL')} CLP`;
+  const totalStr = `$${item.total.toLocaleString('es-CL')} CLP`;
+  
+  // Format clean uppercase description
+  const desc = item.descripcion.trim().toUpperCase();
+
+  if (item.precio_unitario === 0) {
+    return `- ${desc} | Cantidad: ${cantStr} | Precio Unitario: INCLUIDO ($0 CLP) | Total: $0 CLP`;
+  }
+  
+  return `- ${desc} | Cantidad: ${cantStr} | Precio Unitario: ${unitPriceStr} | Subtotal: ${totalStr}`;
+};
+
 export const getLocalContractFallback = (
   client: Client, 
   vendor: Vendor, 
@@ -158,9 +144,53 @@ export const getLocalContractFallback = (
   const today = new Date();
   const dateStringLiteral = `${today.getDate()} de ${months[today.getMonth()]} de ${today.getFullYear()}`;
 
-  const specList = budget.detalle_items && budget.detalle_items.length > 0 
-    ? budget.detalle_items.map(item => `- ${item.descripcion.toUpperCase()}`).join('\n')
-    : `- PISO: RADIER, DE CEMENTO CON ENFIERRADURA CADENA PERIMETRAL 15/20, CAPA DE POLIETILENO COMO AISLANTE DE HUMEDAD, ARRANQUES SANITARIOS EN BAÑOS Y COCINA\n- PANELES EXTERIORES MADERA 2X3, MEMBRANA HIDROFUGA, REVESTIMIENTO PERSONALIZADO.\n- PANELES INTERIORES MADERA 2X3 y REVESTIMIENTO UNA CARA VOLCANITA 15MM EN PAREDES DIVISORAS\n- CERCHAS MADERA 1X4\n- COSTANERAS PINO 2X2\n- ZINC ONDULADO NATURAL 0.35 PARA TECHUMBRE\n- PUERTAS DE ACCESO\n- KIT VENTANAS LINEA AMERICANA\n- ADICIONALES SOLICITADOS SI: ☒ NO: ☐\n- VENTANAS TERMO toda la casa: $280.000.-`;
+  let specList = '';
+  if (budget.detalle_items && budget.detalle_items.length > 0) {
+    const formattedItems = budget.detalle_items.map(item => formatBudgetItemForContract(item)).join('\n');
+    specList = `DESGLOSE DETALLADO DE PARTIDAS, SUPERFICIES Y VALORES CONTRATADOS:
+${formattedItems}
+
+ESPECIFICACIONES TÉCNICAS ESTRUCTURALES Y CONSTRUCTIVAS:
+- PISO: RADIER DE CEMENTO CON ENFIERRADURA CADENA PERIMETRAL 15/20, AISLANTE DE HUMEDAD Y ARRANQUES SANITARIOS EN BAÑOS Y COCINA.
+- PANELES EXTERIORES: MADERA ESTRUCTURAL 2X3 (O 2X4 SEGÚN PARTIDA CONTRATADA), MEMBRANA HIDRÓFUGA Y REVESTIMIENTO EXTERIOR PERSONALIZADO.
+- PANELES INTERIORES: MADERA 2X3 Y REVESTIMIENTO EN VOLCANITA 15MM EN PAREDES DIVISORAS.
+- TECHUMBRE: CERCHAS MADERA 1X4, COSTANERAS PINO 2X2 Y CUBIERTA DE ZINC ONDULADO O TIPO TEJA PREPINTADO SEGÚN PARTIDA.
+- PUERTAS Y VENTANAS: PUERTAS DE ACCESO Y VENTANAS LÍNEA AMERICANA / TERMOPANEL SEGÚN ESPECIFICACIÓN.`;
+  } else {
+    specList = `- PISO: RADIER, DE CEMENTO CON ENFIERRADURA CADENA PERIMETRAL 15/20, CAPA DE POLIETILENO COMO AISLANTE DE HUMEDAD, ARRANQUES SANITARIOS EN BAÑOS Y COCINA
+- PANELES EXTERIORES MADERA 2X3, MEMBRANA HIDROFUGA, REVESTIMIENTO PERSONALIZADO.
+- PANELES INTERIORES MADERA 2X3 y REVESTIMIENTO UNA CARA VOLCANITA 15MM EN PAREDES DIVISORAS
+- CERCHAS MADERA 1X4
+- COSTANERAS PINO 2X2
+- ZINC ONDULADO NATURAL 0.35 PARA TECHUMBRE
+- PUERTAS DE ACCESO
+- KIT VENTANAS LINEA AMERICANA`;
+  }
+
+  const isCombined = budget.es_combinacion_modelos && budget.modelos_combinados && budget.modelos_combinados.length > 1;
+  const totalM2Display = budget.superficie_m2 || project.superficie_m2;
+  const combinedDesc = isCombined 
+    ? `DE VIVIENDA MODULAR COMPUESTA / COMBINACIÓN DE MODELOS: ${budget.modelos_combinados!.map((m, idx) => `MÓDULO ${idx + 1} (${m.rol || 'MÓDULO'}): ${m.nombre.toUpperCase()} (${m.superficie_m2} M2)`).join(' Y ')}, CON UNA SUPERFICIE TOTAL CONSTRUIDA DE ${totalM2Display} M2`
+    : `DE UNA CASA MODELO ${uppercaseModelName} ${totalM2Display} M2`;
+
+  const baseItems = (budget.detalle_items || []).filter(i => i.descripcion.includes('CASA MODELO'));
+  const adicItems = (budget.detalle_items || []).filter(i => !i.descripcion.includes('CASA MODELO') && i.precio_unitario > 0);
+  
+  const baseSubtotal = baseItems.length > 0 
+    ? baseItems.reduce((s, i) => s + i.total, 0)
+    : (budget.monto_base_modelo || (budget.superficie_m2 && budget.valor_m2 ? Math.round(budget.superficie_m2 * budget.valor_m2) : budget.monto_total));
+    
+  const adicSubtotal = adicItems.length > 0
+    ? adicItems.reduce((s, i) => s + i.total, 0)
+    : (budget.monto_adicionales || 0);
+
+  let economicSummary = '';
+  if (isCombined) {
+    const modulesSummary = budget.modelos_combinados!.map((m, i) => `Subtotal Módulo ${i + 1} (${m.nombre}): $${m.subtotal.toLocaleString('es-CL')} CLP`).join(' | ');
+    economicSummary = ` (Desglose económico: ${modulesSummary}${adicSubtotal > 0 ? ` | Subtotal Obras y Mejoramientos Adicionales: $${adicSubtotal.toLocaleString('es-CL')} CLP` : ''} | Total Proyecto: $${budget.monto_total.toLocaleString('es-CL')} CLP IVA incluido).`;
+  } else if (adicSubtotal > 0) {
+    economicSummary = ` (Desglose económico: Subtotal Casa Base: $${baseSubtotal.toLocaleString('es-CL')} CLP | Subtotal Obras y Mejoramientos Adicionales: $${adicSubtotal.toLocaleString('es-CL')} CLP | Total Proyecto: $${budget.monto_total.toLocaleString('es-CL')} CLP IVA incluido).`;
+  }
 
   const totalInWords = numberToSpanishWords(budget.monto_total);
   const totalString = `$${budget.monto_total.toLocaleString('es-CL')} (${totalInWords} pesos chilenos)`;
@@ -207,11 +237,17 @@ INVERSIONES E&E SPA Y ${client.nombre.toUpperCase()}
 
 En Osorno, a ${dateStringLiteral}, se acuerda el presente Anexo al Contrato de Compraventa celebrado entre INVERSIONES E&E, del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por SR EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2 TELEFONO: +569 7777 00 22, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Ciudad de Osorno, comuna de Osorno, X REGION, en adelante "EL VENDEDOR", por una parte; y, por la otra, don (a) ${client.nombre.toUpperCase()} RUT ${client.rut}, DOMICILIADO EN ${client.domicilio.toUpperCase()}, TELÉFONO ${client.telefono}, CORREO ELECTRONICO: ${client.correo}, en adelante "EL COMPRADOR".
 
-Las partes de mutuo acuerdo convienen e incorporan bajo el amparo de la legislación chilena vigente, las siguientes especificaciones técnicas y/o modificaciones adicionales al contrato principal celebrado el día [FECHA_INICIO]:
+PRIMERO: ANTECEDENTES Y PARTIDAS CONTRATADAS
+Las partes de mutuo acuerdo convienen e incorporan bajo el amparo de la legislación chilena vigente, las siguientes especificaciones técnicas, obras y/o modificaciones adicionales fuera del alcance originalmente pactado en el contrato principal:
 
 ${specList}
 
-Se deja constancia que las presentes especificaciones pasan a formar parte integra del contrato de compraventa individualizado precedentemente. Se mantiene plenamente vigente todo lo no expresamente modificado por el presente instrumento, firmándose dos ejemplares del mismo tenor y fecha en Osorno.`;
+SEGUNDO: PRECIO Y FORMA DE PAGO DE LOS ADICIONALES
+El valor de las obras y partidas adicionales pactadas en el presente anexo asciende a la suma de ${totalString}, el cual el COMPRADOR pagará de acuerdo a lo siguiente:
+${paymentList}
+
+TERCERO: RATIFICACIÓN Y PLENA VIGENCIA
+Se deja expresa constancia que las presentes especificaciones pasan a formar parte íntegra del contrato de compraventa individualizado precedentemente. Se mantiene plenamente vigente todo lo no expresamente modificado por el presente instrumento, firmándose dos ejemplares del mismo tenor y fecha en Osorno.`;
   }
 
   return `CONTRATO DE COMPRAVENTA
@@ -219,9 +255,9 @@ INVERSIONES E&E SPA Y ${client.nombre.toUpperCase()}
 
 En Osorno, a ${dateStringLiteral}, entre INVERSIONES E&E , del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por SR EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2 TELEFONO: +569 7777 00 22, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Ciudad de Osorno, comuna de Osorno, X REGION, en adelante “EL VENDEDOR”, por una parte; y , por la otra, don (a) ${client.nombre.toUpperCase()} RUT ${client.rut} , DOMICILIADO EN ${client.domicilio.toUpperCase()}, TELÉFONO ${client.telefono}, CORREO ELECTRONICO: ${client.correo}, en adelante “EL COMPRADOR”, han convenido en celebrar el siguiente Contrato de Compraventa:
 
-PRIMERO: EL VENDEDOR es dueño del proyecto DE UNA CASA MODELO ${uppercaseModelName} ${project.superficie_m2} M2 EL CUAL SERÁ ADQUIRIDO POR EL COMPRADOR PARA SER INSTALADO EN TERRENO DE SU PROPIEDAD, UBICADO EN SU DOMICILIO.
+PRIMERO: EL VENDEDOR es dueño del proyecto ${combinedDesc} EL CUAL SERÁ ADQUIRIDO POR EL COMPRADOR PARA SER INSTALADO EN TERRENO DE SU PROPIEDAD, UBICADO EN SU DOMICILIO.
 
-El proyecto se ajustará estrictamente a las siguientes especificaciones técnicas:
+El proyecto se ajustará estrictamente a las siguientes especificaciones técnicas y desglose de partidas:
 
 ${specList}
 
@@ -229,14 +265,14 @@ Del mismo el COMPRADOR declara:
 - Estar en conocimiento de las características del proyecto y los materiales a utilizar.
 - Haber visitado presencialmente un similar al proyecto señalado, conocer sus características y terminaciones, o en su defecto haber recibido información o planos del proyecto señalado, conociendo sus características externas e internas, tanto como las terminaciones de este.
 - Estar en conocimiento de que el servicio señalado no incluye la generación ni trámite de permisos de ninguna especie (construcción, luz, agua, redes sanitarias, etc.), los cuales son de exclusiva responsabilidad del COMPRADOR una vez se le sea entregado el proyecto.
-- Estar en conocimiento de que la compraventa señalada que solicita a través de este instrumento, se entrega bajo las condiciones ofrecidas y conocidas por el COMPRADOR, y no responde a la obligación de ajustarse a características exigidas por otros organismos públicos o privados para fines particulares, salvo las características estructurales de construcción acordes a la normativa vigente para este tipo de edificaciones, y siempre considerando un process de instalación correcto por parte del VENDEDOR.
+- Estar en conocimiento de que la compraventa señalada que solicita a través de este instrumento, se entrega bajo las condiciones ofrecidas y conocidas por el COMPRADOR, y no responde a la obligación de ajustarse a características exigidas por otros organismos públicos o privados para fines particulares, salvo las características estructurales de construcción acordes a la normativa vigente para este tipo de edificaciones, y siempre considerando un proceso de instalación correcto por parte del VENDEDOR.
 - Haber recibido y estar en conocimiento de los planos de distribución del proyecto.
 - Ser dueño del TERRENO en donde se llevará a cabo el servicio de INSTALACION o en su defecto contar con la autorización respectiva por parte del dueño.
 
 SEGUNDO: DE LAS OBLIGACIONES DEL COMPRADOR
 Por este acto el COMPRADOR se obliga a:
-a) Pagar el precio de INSTALACION DE PROYECTO CASA MODELO ${uppercaseModelName} ${project.superficie_m2} M2 en las fechas y formas estipuladas en el presente contrato.
-b) Proporcionar al VENDEDOR, las conditions necesarias básicas para la recepción de los materiales y demás insumos de proyecto en la fecha convenida; en especial el COMPRADOR debe proveer a la empresa de una entrada adecuada a las características del vehículo que realizará la descarga de MATERIALES, haber gestionado los permisos de paso de camión si se requiriesen, un terreno despejado y lo suficientemente plano para la descarga E INSTALACION de estos.
+a) Pagar el precio de INSTALACION DE PROYECTO ${combinedDesc} en las fechas y formas estipuladas en el presente contrato.
+b) Proporcionar al VENDEDOR, las condiciones necesarias básicas para la recepción de los materiales y demás insumos de proyecto en la fecha convenida; en especial el COMPRADOR debe proveer a la empresa de una entrada adecuada a las características del vehículo que realizará la descarga de MATERIALES, haber gestionado los permisos de paso de camión si se requiriesen, un terreno despejado y lo suficientemente plano para la descarga E INSTALACION de estos.
 c) Proporcionar para el montaje del proyecto un TERRENO de su propiedad o en su defecto acompañar al VENDEDOR con la autorización correspondiente del dueño del terreno para poder montar el proyecto en el lugar escogido al efecto. INVERSIONES E&E, no se hace responsable de aquellas contiendas con terceros derivadas de la ejecución del proyecto en terreno ajeno al COMPRADOR.
 d) Revisar las características del proyecto, materiales y demás insumos, una vez éstos se encuentren disponibles y previo a proceder a la descarga de estos.
 
@@ -249,9 +285,9 @@ a) Entregar al COMPRADOR el SERVICIO contratado de acuerdo con las condiciones d
 b) Respetar los plazos de entrega estipulados en el presente contrato, salvo imprevistos de fuerza mayor o imposibles de prever por la empresa.
 c) Proporcionar al COMPRADOR toda la información requerida respecto del proyecto contratado.
 
-QUINTO: Por el presente instrumento INVERSIONES E&E, vende al COMPRADOR, la propiedad de los bienes MUEBLES señalados en la cláusula primera precedente, correspondientes a proyecto de CASA Modelo ${uppercaseModelName} ${project.superficie_m2} M2, quien los compra y adquiere para sí.
+QUINTO: Por el presente instrumento INVERSIONES E&E, vende al COMPRADOR, la propiedad de los bienes MUEBLES señalados en la cláusula primera precedente, correspondientes a proyecto ${combinedDesc}, quien los compra y adquiere para sí.
 
-SEXTO: El valor es la suma de ${totalString} Que el COMPRADOR paga de la siguiente forma:
+SEXTO: El valor es la suma de ${totalString}${economicSummary} Que el COMPRADOR paga de la siguiente forma:
 ${paymentList}
 
 SÉPTIMO: EL VENDEDOR se obliga a poner en terreno del COMPRADOR EL PERSONAL E INSUMOS para el servicio el DIA [FECHA_INICIO], pudiendo prorrogar dicho plazo, unilateralmente si las condiciones climáticas no permitieran el inicio de obra.
@@ -271,6 +307,10 @@ DÉCIMO: El presente instrumento se suscribe en dos ejemplares quedando uno en p
 DECIMO PRIMERO: EL COMPRADOR por medio de este contrato de compraventa faculta al VENDEDOR a hacer DESARME Y RETIRO del PROYECTO entregado si el comprador no completara los pagos señalados.`;
 };
 
+// -------------------------------------------------------------
+// Client Service Proxies to Server API Endpoints
+// -------------------------------------------------------------
+
 export const generateContractText = async (
   client: Client, 
   vendor: Vendor, 
@@ -282,195 +322,202 @@ export const generateContractText = async (
   lugarSuscripcion: string, 
   isAnexo: boolean
 ): Promise<string> => {
+  const fallbackContractText = getLocalContractFallback(client, vendor, project, budget, payments, startDate, plazoInstalacion, lugarSuscripcion, isAnexo);
+  const rawModelName = project?.modelo || (project as any)?.nombre || 'Personalizada';
+  const uppercaseModelName = rawModelName.toUpperCase();
+
+  const prompt = `
+    Genera un ${isAnexo ? 'ANEXO AL CONTRATO' : 'CONTRATO DE COMPRAVENTA'} formal y detallado siguiendo estrictamente el siguiente modelo de texto continuo para la empresa "INVERSIONES E&E SPA".
+    
+    Debes sustituir las variables de acuerdo a los datos entregados, pero DEBES mantener el resto del texto LEGAL EXACTO, VERBATIM Y COMPLETO sin omitir ningún párrafo ni palabra.
+
+    DATOS DE VARIABLES COMPRADOR:
+    - Nombre Comprador: ${client.nombre.toUpperCase()}
+    - RUT Comprador: ${client.rut}
+    - Domicilio Comprador: ${client.domicilio.toUpperCase()}
+    - Teléfono Comprador: ${client.telefono}
+    - Correo Comprador: ${client.correo}
+
+    DATOS DE VARIABLES PROYECTO:
+    - Modelo de Casa: ${uppercaseModelName}
+    - Superficie: ${project.superficie_m2} m2
+    - Precio Total: $${budget.monto_total.toLocaleString('es-CL')} (${numberToSpanishWords(budget.monto_total)} pesos chilenos)
+    
+    MODELO OBLIGATORIO DE TEXTO COMPLETO A RESPONDER:
+    ${fallbackContractText}
+    
+    REGLAS CRÍTICAS DE RESPUESTA:
+    1. Devuelve SOLO el texto completo del contrato generado de acuerdo al modelo obligatorio suministrado. No agregues introducciones, ni comentarios, ni bloques de código de markdown como \`\`\` o similares.
+    2. En la cláusula PRIMERO (o en el desglose de partidas del anexo) debes incluir OBLIGATORIAMENTE todas y cada una de las partidas adicionales y nuevas con su cantidad de m², globales o unidades, precio unitario y total, tal como aparecen en el modelo suministrado.
+    3. No omitas ningún párrafo, especialmente los tres párrafos explicativos que se ubican entre SÉPTIMO y OCTAVO. Deben aparecer tal cual están descritos.
+    4. No agregues sección de firmas al final.
+    5. No uses otra letra o formato en SEXTO que d), e), f), g), h), i).
+  `;
+
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    
-    const rawModelName = project?.modelo || (project as any)?.nombre || 'Personalizada';
-    const uppercaseModelName = rawModelName.toUpperCase();
-    
-    // First generate the fallback so we have perfect baseline structures to feed as prompt template or use as fallback
-    const fallbackContractText = getLocalContractFallback(client, vendor, project, budget, payments, startDate, plazoInstalacion, lugarSuscripcion, isAnexo);
-    
-    if (!apiKey) {
-      console.warn("La API Key de Gemini no está configurada. Usando el generador local de contratos.");
-      return fallbackContractText;
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
-    
-    const prompt = `
-      Genera un ${isAnexo ? 'ANEXO AL CONTRATO' : 'CONTRATO DE COMPRAVENTA'} formal y detallado siguiendo estrictamente el siguiente modelo de texto continuo para la empresa "INVERSIONES E&E SPA".
-      
-      Debes sustituir las variables de acuerdo a los datos entregados, pero DEBES mantener el resto del texto LEGAL EXACTO, VERBATIM Y COMPLETO sin omitir ningún párrafo ni palabra.
-
-      DATOS DE VARIABLES COMPRADOR:
-      - Nombre Comprador: ${client.nombre.toUpperCase()}
-      - RUT Comprador: ${client.rut}
-      - Domicilio Comprador: ${client.domicilio.toUpperCase()}
-      - Teléfono Comprador: ${client.telefono}
-      - Correo Comprador: ${client.correo}
-
-      DATOS DE VARIABLES PROYECTO:
-      - Modelo de Casa: ${uppercaseModelName}
-      - Superficie: ${project.superficie_m2} m2
-      - Precio Total: $${budget.monto_total.toLocaleString('es-CL')} (${numberToSpanishWords(budget.monto_total)} pesos chilenos)
-      
-      MODELO OBLIGATORIO DE TEXTO COMPLETO A RESPONDER:
-      ${fallbackContractText}
-      
-      REGLAS CRÍTICAS DE RESPUESTA:
-      1. Devuelve SOLO el texto completo del contrato generado de acuerdo al modelo obligatorio suministrado. No agregues introducciones, ni comentarios, ni bloques de código de markdown como \`\`\` o similares.
-      2. No omitas ningún párrafo, especialmente los tres párrafos explicativos que se ubican entre SÉPTIMO y OCTAVO. Deben aparecer tal cual están descritos.
-      3. No agregues sección de firmas al final.
-      4. No uses otra letra o formato en SEXTO que d), e), f), g), h), i).
-    `;
-
-    const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: [{ parts: [{ text: prompt }] }],
+    const res = await fetch('/api/gemini/contract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, fallbackText: fallbackContractText }),
     });
 
-    return response.text || fallbackContractText;
-  } catch (error: any) {
-    console.error("Error in generateContractText:", error);
-    return getLocalContractFallback(client, vendor, project, budget, payments, startDate, plazoInstalacion, lugarSuscripcion, isAnexo);
+    if (res.ok) {
+      const data = await res.json();
+      return data.text || fallbackContractText;
+    }
+    return fallbackContractText;
+  } catch (error) {
+    console.warn("Usando contrato local fallback debido a error de red:", error);
+    return fallbackContractText;
   }
 };
 
 export const analyzeBudgetFile = async (base64Data: string, mimeType: string): Promise<string> => {
   try {
-    const ai = getGeminiClient();
-    const prompt = `Analiza este documento de presupuesto o cubicación. Extrae la información relevante como ítems, cantidades, unidades, precios unitarios y totales. 
-    Responde ÚNICAMENTE con un objeto JSON con este formato:
-    {
-      "items": [{"descripcion": "...", "cantidad": 1, "unidad": "un", "precio_unitario": 100, "total": 100}],
-      "superficie_m2": 0
-    }`;
-
-    const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: [
-        { 
-          parts: [
-            { text: prompt },
-            { inlineData: { mimeType, data: base64Data } }
-          ] 
-        }
-      ],
+    const res = await fetch('/api/gemini/analyze-budget-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64Data, mimeType }),
     });
 
-    return response.text || "{}";
+    if (res.ok) {
+      const data = await res.json();
+      return data.text || "{}";
+    }
+    return JSON.stringify({ items: [] });
   } catch (error: any) {
-    console.error("Error in analyzeBudgetFile:", error);
+    console.error("Error in analyzeBudgetFile proxy:", error);
     return JSON.stringify({ items: [], error: error.message });
   }
 };
 
 export const suggestCubicacionAI = async (descripcion: string, superficieM2: number): Promise<any[]> => {
   try {
-    const ai = getGeminiClient();
-    const prompt = `Sugiéreme una lista de ítems de construcción para una casa de ${superficieM2}m2 con la siguiente descripción: "${descripcion}".
-    Responde ÚNICAMENTE con un array JSON válido de objetos con este formato: 
-    [{"item": "Nombre del ítem", "descripcion": "Breve detalle", "cantidad": 10, "unidad": "m2", "precio_unitario": 5000, "total": 50000}]`;
-
-    const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: [{ parts: [{ text: prompt }] }],
+    const res = await fetch('/api/gemini/suggest-cubicacion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ descripcion, superficieM2 }),
     });
 
-    const text = response.text || "[]";
-    const match = text.match(/\[[\s\S]*\]/);
-    return match ? JSON.parse(match[0]) : [];
+    if (res.ok) {
+      const data = await res.json();
+      return Array.isArray(data.items) ? data.items : [];
+    }
+    return [];
   } catch (error) {
-    console.error("Error in suggestCubicacionAI:", error);
+    console.error("Error in suggestCubicacionAI proxy:", error);
     return [];
   }
 };
 
 export const analyzeCommercialAI = async (client: Client, projects: Project[], budgets: Budget[], contracts: Contract[]): Promise<string> => {
   try {
-    const ai = getGeminiClient();
-    const prompt = `Realiza un análisis comercial estratégico para el cliente ${client.nombre}. 
-    Contexto: Compras realizadas: ${contracts.length}, Presupuestos vigentes: ${budgets.length}, Proyectos asociados: ${projects.length}.
-    Incluye recomendaciones de fidelización y oportunidades de venta cruzada.`;
-
-    const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: [{ parts: [{ text: prompt }] }],
+    const res = await fetch('/api/gemini/commercial-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client, projects, budgets, contracts }),
     });
 
-    return response.text || "Análisis no disponible.";
+    if (res.ok) {
+      const data = await res.json();
+      return data.text || "Análisis no disponible.";
+    }
+    return "Análisis no disponible en este momento.";
   } catch (error) {
-    console.error("Error in analyzeCommercialAI:", error);
+    console.error("Error in analyzeCommercialAI proxy:", error);
     return "Error al generar el análisis comercial.";
   }
 };
 
 export const generateBusinessAnalysis = async (context: any, userPrompt: string): Promise<string> => {
   try {
-    const ai = getGeminiClient();
-    const prompt = `Contexto del Negocio: ${JSON.stringify(context)}. 
-    Usuario pregunta: ${userPrompt}
-    Responde como un consultor de negocios experto para Madacas (empresa de casas prefabricadas).`;
-
-    const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: [{ parts: [{ text: prompt }] }],
+    const res = await fetch('/api/gemini/business-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context, userPrompt }),
     });
 
-    return response.text || "No tengo una respuesta para eso en este momento.";
-  } catch (error) {
-    console.error("Error in generateBusinessAnalysis:", error);
+    if (res.ok) {
+      const data = await res.json();
+      return data.text || "No tengo una respuesta para eso en este momento.";
+    }
     return "Error al procesar la consulta empresarial.";
+  } catch (error) {
+    console.error("Error in generateBusinessAnalysis proxy:", error);
+    return "Error al procesar la consulta empresarial.";
+  }
+};
+
+// Streaming support for Business Analysis
+export const streamBusinessAnalysis = async (
+  context: any, 
+  userPrompt: string, 
+  onChunk: (text: string) => void,
+  onComplete: () => void,
+  onError: (err: any) => void
+): Promise<void> => {
+  try {
+    const response = await fetch('/api/gemini/business-analysis/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context, userPrompt }),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`Error en servidor: ${response.statusText}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const raw = line.slice(6).trim();
+          if (raw === '[DONE]') {
+            onComplete();
+            return;
+          }
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed.text) {
+              onChunk(parsed.text);
+            }
+          } catch (e) {
+            // ignore partial json
+          }
+        }
+      }
+    }
+    onComplete();
+  } catch (err) {
+    onError(err);
   }
 };
 
 export const analyzeHouseModelFile = async (base64Data: string, mimeType: string): Promise<Partial<HouseModel>> => {
   try {
-    const ai = getGeminiClient();
-    const prompt = `Actúa como un experto en arquitectura y construcción modular. 
-    Analiza este archivo (imagen o PDF) que contiene la ficha técnica, planos o publicidad de un modelo de casa prefabricada.
-    Extrae la siguiente información:
-    
-    1. nombre: El nombre comercial del modelo.
-    2. descripcion: Un resumen persuasivo de 1-2 párrafos sobre características.
-    3. superficie_m2: Metraje total en m2 (solo número).
-    4. preciobase: Valor de venta base (solo número, sin puntos ni símbolos).
-    5. especificaciones: Lista de ítems con {descripcion, cantidad, unidad, precio_unitario, total}.
-
-    IMPORTANTE: Responde EXCLUSIVAMENTE con el objeto JSON. Sin explicaciones previas ni posteriores.
-    Si no encuentras un dato, usa valores por defecto (0 para números, "" para strings).`;
-
-    const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: [
-        { 
-          parts: [
-            { text: prompt },
-            { inlineData: { mimeType, data: base64Data } }
-          ] 
-        }
-      ],
-      config: {
-        responseMimeType: "application/json",
-      }
+    const res = await fetch('/api/gemini/analyze-house-model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64Data, mimeType }),
     });
 
-    const text = response.text || "{}";
-    const parsed = extractJSON(text);
-
-    if (!parsed) return {};
-
-    // Standardize price field and ensure numeric types
-    return {
-      nombre: parsed.nombre || parsed.name || "",
-      descripcion: parsed.descripcion || parsed.description || "",
-      superficie_m2: Number(parsed.superficie_m2) || Number(parsed.superficie) || 0,
-      preciobase: Number(parsed.preciobase) || Number(parsed.precio_base) || Number(parsed.valor_venta) || 0,
-      especificaciones: Array.isArray(parsed.especificaciones) ? parsed.especificaciones : []
-    };
+    if (res.ok) {
+      const data = await res.json();
+      return data.model || {};
+    }
+    return {};
   } catch (error) {
-    console.error("Error in analyzeHouseModelFile:", error);
+    console.error("Error in analyzeHouseModelFile proxy:", error);
     return {};
   }
 };

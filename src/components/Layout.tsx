@@ -199,23 +199,41 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, role, s
                 {allItems.find(i => i.id === currentView)?.label || 'Panel'}
               </h2>
               
-              {/* Workflow Stepper */}
-              {(currentView === 'clients' || currentView === 'budgets' || currentView === 'contracts') && (
-                <div className="flex items-center gap-2 bg-slate-50 px-4 py-1.5 rounded-full border border-slate-200">
-                  <div className={`flex items-center gap-1.5 ${currentView === 'clients' ? 'text-emerald-600' : 'text-slate-400'}`}>
-                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${currentView === 'clients' ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'}`}>1</div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Cliente</span>
-                  </div>
-                  <div className="w-4 h-px bg-slate-300"></div>
-                  <div className={`flex items-center gap-1.5 ${currentView === 'budgets' ? 'text-emerald-600' : 'text-slate-400'}`}>
-                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${currentView === 'budgets' ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'}`}>2</div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Cotización</span>
-                  </div>
-                  <div className="w-4 h-px bg-slate-300"></div>
-                  <div className={`flex items-center gap-1.5 ${currentView === 'contracts' ? 'text-emerald-600' : 'text-slate-400'}`}>
-                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${currentView === 'contracts' ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'}`}>3</div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Contrato</span>
-                  </div>
+              {/* Interactive Commercial Workflow Stepper */}
+              {(currentView === 'clients' || currentView === 'designs' || currentView === 'budgets' || currentView === 'contracts') && (
+                <div className="flex items-center gap-1 sm:gap-2 bg-slate-100/90 p-1 sm:px-3 sm:py-1.5 rounded-full border border-slate-200 shadow-xs">
+                  {[
+                    { id: 'clients', step: 1, label: 'Cliente' },
+                    { id: 'designs', step: 2, label: 'Modelo & m²' },
+                    { id: 'budgets', step: 3, label: 'Presupuesto' },
+                    { id: 'contracts', step: 4, label: 'Contrato & Anexo' },
+                  ].map((s, idx, arr) => {
+                    const isActive = currentView === s.id;
+                    return (
+                      <React.Fragment key={s.id}>
+                        <button
+                          type="button"
+                          onClick={() => setView(s.id as ViewState)}
+                          className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                            isActive
+                              ? 'bg-emerald-600 text-white shadow-sm'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+                          }`}
+                          title={`Ir a etapa ${s.step}: ${s.label}`}
+                        >
+                          <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${
+                            isActive ? 'bg-white text-emerald-700' : 'bg-slate-300 text-slate-700'
+                          }`}>
+                            {s.step}
+                          </span>
+                          <span className="text-[11px] font-semibold whitespace-nowrap hidden sm:inline">{s.label}</span>
+                        </button>
+                        {idx < arr.length - 1 && (
+                          <div className="w-2 sm:w-3 h-px bg-slate-300 hidden xs:block"></div>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </div>
               )}
           </div>
