@@ -1,7 +1,15 @@
 import { Client, Project, Budget, Vendor, PaymentInstallment, Contract, HouseModel, BudgetItem } from "@/types";
+import {
+  reconcileBudgetTotals,
+  calculateInstallmentsExact,
+  formatLongSpanishDate,
+  getEffectiveBudgetTotalForContract,
+  isBaseModelItem
+} from "@/lib/contractMath";
 
 export const numberToSpanishWords = (num: number): string => {
-  if (num === 0) return "cero";
+  const cleanNum = Math.max(0, Math.round(Number(num) || 0));
+  if (cleanNum === 0) return "cero";
   
   const rules = [
     { value: 1000000, t_sing: "un millón", t_plur: "millones" },
@@ -57,7 +65,7 @@ export const numberToSpanishWords = (num: number): string => {
     return res;
   };
 
-  let remainder = num;
+  let remainder = cleanNum;
   let textParts = [];
 
   for (const rule of rules) {
@@ -83,7 +91,7 @@ export const numberToSpanishWords = (num: number): string => {
 export const getBusinessDaysLaterDateString = (startDateStr: string, days: number): string => {
   let date = new Date();
   if (startDateStr) {
-    const parts = startDateStr.split('-');
+    const parts = startDateStr.split('T')[0].split('-');
     if (parts.length === 3) {
       const year = parseInt(parts[0], 10);
       const month = parseInt(parts[1], 10) - 1;
@@ -112,16 +120,17 @@ export const getBusinessDaysLaterDateString = (startDateStr: string, days: numbe
 
 export const formatBudgetItemForContract = (item: BudgetItem): string => {
   const rawUnidad = item.unidad ? item.unidad.trim() : (item.descripcion.toLowerCase().includes('m2') || item.descripcion.toLowerCase().includes('m²') ? 'm²' : 'un');
-  const cantFormatted = Number.isInteger(item.cantidad) ? item.cantidad.toString() : item.cantidad.toFixed(1);
+  const cantFormatted = Number.isInteger(item.cantidad) ? item.cantidad.toString() : Number(item.cantidad).toFixed(1);
   const cantStr = `${cantFormatted} ${rawUnidad}`;
-  const unitPriceStr = `$${item.precio_unitario.toLocaleString('es-CL')} CLP`;
-  const totalStr = `$${item.total.toLocaleString('es-CL')} CLP`;
+  const cleanUnit = Math.round(Number(item.precio_unitario) || 0);
+  const cleanTotal = Math.round(Number(item.total) || 0);
+  const unitPriceStr = `$${cleanUnit.toLocaleString('es-CL')} CLP`;
+  const totalStr = `$${cleanTotal.toLocaleString('es-CL')} CLP`;
   
-  // Format clean uppercase description
   const desc = item.descripcion.trim().toUpperCase();
 
-  if (item.precio_unitario === 0) {
-    return `- ${desc} | Cantidad: ${cantStr} | Precio Unitario: INCLUIDO ($0 CLP) | Total: $0 CLP`;
+  if (cleanUnit === 0 && cleanTotal === 0) {
+    return `- ${desc} | Cantidad: ${cantStr} | Precio Unitario: INCLUIDO ($0 CLP) | Subtotal: $0 CLP`;
   }
   
   return `- ${desc} | Cantidad: ${cantStr} | Precio Unitario: ${unitPriceStr} | Subtotal: ${totalStr}`;
@@ -129,25 +138,41 @@ export const formatBudgetItemForContract = (item: BudgetItem): string => {
 
 export const getLocalContractFallback = (
   client: Client, 
-  vendor: Vendor, 
+  _vendor: Vendor, 
   project: Project, 
   budget: Budget, 
   payments: PaymentInstallment[], 
   startDate: string, 
   plazoInstalacion: number, 
   lugarSuscripcion: string, 
-  isAnexo: boolean
+  isAnexo: boolean,
+  contractDate?: string,
+  metodoPago?: string
 ): string => {
   const rawModelName = project?.modelo || (project as any)?.nombre || 'Personalizada';
   const uppercaseModelName = rawModelName.toUpperCase();
-  const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  const today = new Date();
-  const dateStringLiteral = `${today.getDate()} de ${months[today.getMonth()]} de ${today.getFullYear()}`;
+  const dateStringLiteral = formatLongSpanishDate(contractDate);
+  const ciudadSuscripcion = (lugarSuscripcion || budget.lugar_suscripcion || 'Osorno').trim();
+
+  const reconciled = reconcileBudgetTotals(budget);
+  const effectiveTotal = getEffectiveBudgetTotalForContract(budget, isAnexo);
+
+  // Items to print in the contract:
+  // If creating an Anexo directly from a base budget (!budget.es_anexo), print only the paid adicionales
+  // Otherwise (standard contract or dedicated PRESUPUESTO_ANEXO), print every single budget line item.
+  const contractItems: BudgetItem[] =
+    isAnexo && !budget.es_anexo
+      ? reconciled.adicItems.filter(i => i.total > 0)
+      : (budget.detalle_items || []);
 
   let specList = '';
-  if (budget.detalle_items && budget.detalle_items.length > 0) {
-    const formattedItems = budget.detalle_items.map(item => formatBudgetItemForContract(item)).join('\n');
-    specList = `DESGLOSE DETALLADO DE PARTIDAS, SUPERFICIES Y VALORES CONTRATADOS:
+  if (contractItems.length > 0) {
+    const formattedItems = contractItems.map(item => formatBudgetItemForContract(item)).join('\n');
+    if (isAnexo) {
+      specList = `DESGLOSE DETALLADO DE PARTIDAS, SUPERFICIES Y VALORES ADICIONALES CONTRATADOS:
+${formattedItems}`;
+    } else {
+      specList = `DESGLOSE DETALLADO DE PARTIDAS, SUPERFICIES Y VALORES CONTRATADOS:
 ${formattedItems}
 
 ESPECIFICACIONES TÉCNICAS ESTRUCTURALES Y CONSTRUCTIVAS:
@@ -156,6 +181,7 @@ ESPECIFICACIONES TÉCNICAS ESTRUCTURALES Y CONSTRUCTIVAS:
 - PANELES INTERIORES: MADERA 2X3 Y REVESTIMIENTO EN VOLCANITA 15MM EN PAREDES DIVISORAS.
 - TECHUMBRE: CERCHAS MADERA 1X4, COSTANERAS PINO 2X2 Y CUBIERTA DE ZINC ONDULADO O TIPO TEJA PREPINTADO SEGÚN PARTIDA.
 - PUERTAS Y VENTANAS: PUERTAS DE ACCESO Y VENTANAS LÍNEA AMERICANA / TERMOPANEL SEGÚN ESPECIFICACIÓN.`;
+    }
   } else {
     specList = `- PISO: RADIER, DE CEMENTO CON ENFIERRADURA CADENA PERIMETRAL 15/20, CAPA DE POLIETILENO COMO AISLANTE DE HUMEDAD, ARRANQUES SANITARIOS EN BAÑOS Y COCINA
 - PANELES EXTERIORES MADERA 2X3, MEMBRANA HIDROFUGA, REVESTIMIENTO PERSONALIZADO.
@@ -167,95 +193,103 @@ ESPECIFICACIONES TÉCNICAS ESTRUCTURALES Y CONSTRUCTIVAS:
 - KIT VENTANAS LINEA AMERICANA`;
   }
 
-  const isCombined = budget.es_combinacion_modelos && budget.modelos_combinados && budget.modelos_combinados.length > 1;
-  const totalM2Display = budget.superficie_m2 || project.superficie_m2;
+  const isCombined = !!(budget.es_combinacion_modelos && budget.modelos_combinados && budget.modelos_combinados.length > 1);
+  const totalM2Display = budget.superficie_m2 || project?.superficie_m2 || 36;
   const combinedDesc = isCombined 
-    ? `DE VIVIENDA MODULAR COMPUESTA / COMBINACIÓN DE MODELOS: ${budget.modelos_combinados!.map((m, idx) => `MÓDULO ${idx + 1} (${m.rol || 'MÓDULO'}): ${m.nombre.toUpperCase()} (${m.superficie_m2} M2)`).join(' Y ')}, CON UNA SUPERFICIE TOTAL CONSTRUIDA DE ${totalM2Display} M2`
+    ? `DE VIVIENDA MODULAR COMPUESTA / COMBINACIÓN DE MODELOS: ${budget.modelos_combinados!.map((m, idx) => `MÓDULO ${idx + 1} (${(m.rol || 'MÓDULO').toUpperCase()}): ${m.nombre.toUpperCase()} (${m.superficie_m2} M2)`).join(' Y ')}, CON UNA SUPERFICIE TOTAL CONSTRUIDA DE ${totalM2Display} M2`
     : `DE UNA CASA MODELO ${uppercaseModelName} ${totalM2Display} M2`;
 
-  const baseItems = (budget.detalle_items || []).filter(i => i.descripcion.includes('CASA MODELO'));
-  const adicItems = (budget.detalle_items || []).filter(i => !i.descripcion.includes('CASA MODELO') && i.precio_unitario > 0);
-  
-  const baseSubtotal = baseItems.length > 0 
-    ? baseItems.reduce((s, i) => s + i.total, 0)
-    : (budget.monto_base_modelo || (budget.superficie_m2 && budget.valor_m2 ? Math.round(budget.superficie_m2 * budget.valor_m2) : budget.monto_total));
-    
-  const adicSubtotal = adicItems.length > 0
-    ? adicItems.reduce((s, i) => s + i.total, 0)
-    : (budget.monto_adicionales || 0);
+  const baseSubtotal = reconciled.baseSum;
+  const adicSubtotal = reconciled.adicSum;
 
   let economicSummary = '';
-  if (isCombined) {
-    const modulesSummary = budget.modelos_combinados!.map((m, i) => `Subtotal Módulo ${i + 1} (${m.nombre}): $${m.subtotal.toLocaleString('es-CL')} CLP`).join(' | ');
-    economicSummary = ` (Desglose económico: ${modulesSummary}${adicSubtotal > 0 ? ` | Subtotal Obras y Mejoramientos Adicionales: $${adicSubtotal.toLocaleString('es-CL')} CLP` : ''} | Total Proyecto: $${budget.monto_total.toLocaleString('es-CL')} CLP IVA incluido).`;
-  } else if (adicSubtotal > 0) {
-    economicSummary = ` (Desglose económico: Subtotal Casa Base: $${baseSubtotal.toLocaleString('es-CL')} CLP | Subtotal Obras y Mejoramientos Adicionales: $${adicSubtotal.toLocaleString('es-CL')} CLP | Total Proyecto: $${budget.monto_total.toLocaleString('es-CL')} CLP IVA incluido).`;
+  if (!isAnexo) {
+    if (isCombined) {
+      const modulesSummary = budget.modelos_combinados!.map((m, i) => `Subtotal Módulo ${i + 1} (${m.nombre}): $${Math.round(m.subtotal).toLocaleString('es-CL')} CLP`).join(' | ');
+      economicSummary = ` (Desglose económico: ${modulesSummary}${adicSubtotal > 0 ? ` | Subtotal Obras y Mejoramientos Adicionales: $${adicSubtotal.toLocaleString('es-CL')} CLP` : ''} | Total Proyecto: $${effectiveTotal.toLocaleString('es-CL')} CLP IVA incluido).`;
+    } else if (adicSubtotal > 0 && reconciled.baseItems.some(isBaseModelItem)) {
+      economicSummary = ` (Desglose económico: Subtotal Casa Base: $${baseSubtotal.toLocaleString('es-CL')} CLP | Subtotal Obras y Mejoramientos Adicionales: $${adicSubtotal.toLocaleString('es-CL')} CLP | Total Proyecto: $${effectiveTotal.toLocaleString('es-CL')} CLP IVA incluido).`;
+    }
   }
 
-  const totalInWords = numberToSpanishWords(budget.monto_total);
-  const totalString = `$${budget.monto_total.toLocaleString('es-CL')} (${totalInWords} pesos chilenos)`;
+  const totalInWords = numberToSpanishWords(effectiveTotal);
+  const totalString = `$${effectiveTotal.toLocaleString('es-CL')} (${totalInWords} pesos chilenos)`;
+
+  // Ensure installment amounts strictly sum to effectiveTotal
+  const normalizedPayments =
+    payments && payments.length > 0
+      ? (() => {
+          const currentPaySum = payments.reduce((s, p) => s + Math.round(Number(p.monto) || 0), 0);
+          return currentPaySum === effectiveTotal
+            ? payments.map(p => ({ ...p, monto: Math.round(Number(p.monto) || 0) }))
+            : calculateInstallmentsExact(effectiveTotal, payments);
+        })()
+      : calculateInstallmentsExact(effectiveTotal, [
+          { descripcion: '30% - FIRMA DE CONTRATO (TRANSFERENCIA)', porcentaje: 30, monto: 0 },
+          { descripcion: '30% - ENTREGA DE RADIER CON ARRANQUES SANITARIOS', porcentaje: 30, monto: 0 },
+          { descripcion: '30% - MOMENTO DE ENTREGA PANELES Y CERCHAS INSTALADAS', porcentaje: 30, monto: 0 },
+          { descripcion: '10% - CONTRA ENTREGA FINAL (MAX 5 DÍAS HÁBILES)', porcentaje: 10, monto: 0 }
+        ]);
+
+  const effectivePaymentMethod = (metodoPago || budget.forma_pago || 'Transferencia').toUpperCase();
 
   const formatPaymentInWords = (p: PaymentInstallment, index: number) => {
     const letter = String.fromCharCode(100 + index); // Starts with 'd'
     const montoText = `$${p.monto.toLocaleString('es-CL')}`;
     const wordsText = `${numberToSpanishWords(p.monto)} pesos chilenos`;
-    
-    if (index === 0) {
-      return `${letter}) En este acto, se recibe el monto correspondiente al ${p.porcentaje} % del total del proyecto por un valor de ${montoText} (${wordsText}) en Transferencia bancaria a Cuenta Corriente 0-000-9960580-4 del Banco Santander, que el vendedor recibe a su entera satisfacción.`;
-    } else if (index === 1) {
+    const descUpper = (p.descripcion || '').toUpperCase();
+
+    const isDefaultFourMilestoneContract = !isAnexo && normalizedPayments.length === 4;
+
+    if (isDefaultFourMilestoneContract && index === 0 && descUpper.includes('FIRMA')) {
+      return `${letter}) En este acto, se recibe el monto correspondiente al ${p.porcentaje} % del total del proyecto por un valor de ${montoText} (${wordsText}) mediante ${effectivePaymentMethod === 'TRANSFERENCIA' ? 'Transferencia bancaria a Cuenta Corriente 0-000-9960580-4 del Banco Santander' : effectivePaymentMethod}, que el vendedor recibe a su entera satisfacción.`;
+    } else if (isDefaultFourMilestoneContract && index === 1 && descUpper.includes('RADIER')) {
       return `${letter}) El monto correspondiente al ${p.porcentaje}% del valor del proyecto, por un valor de ${montoText} (${wordsText}) se hará efectivo en el avance ENTREGA DE RADIER CON ARRANQUES SANITARIOS INCLUÍDOS.`;
-    } else if (index === 2) {
+    } else if (isDefaultFourMilestoneContract && index === 2 && descUpper.includes('PANELES')) {
       return `${letter}) El monto correspondiente al ${p.porcentaje}% del valor del proyecto, por un precio de ${montoText} (${wordsText}) se pagará al momento de entrega de PANELES Y CERCHAS INSTALADAS.`;
-    } else if (index === 3) {
+    } else if (isDefaultFourMilestoneContract && index === 3 && descUpper.includes('ENTREGA FINAL')) {
       return `${letter}) El monto correspondiente al ${p.porcentaje}% final del valor del proyecto, ${montoText} (${wordsText}) será cancelado a más tardar 5 días hábiles después de la entrega del proyecto contratado.`;
-    } else {
-      return `${letter}) El monto correspondiente al ${p.porcentaje}% (${p.descripcion}), por un valor de ${montoText} (${wordsText}) se pagará según las condiciones acordadas.`;
     }
+
+    return `${letter}) El monto correspondiente al ${p.porcentaje}% (${p.descripcion || `Cuota ${index + 1}`}), por un valor de ${montoText} (${wordsText}) se pagará según las condiciones acordadas (${effectivePaymentMethod}).`;
   };
 
-  let paymentList = '';
-  if (payments && payments.length > 0) {
-    paymentList = payments.map((p, i) => formatPaymentInWords(p, i)).join('\n');
-    const nextLetter1 = String.fromCharCode(100 + payments.length);
-    const nextLetter2 = String.fromCharCode(100 + payments.length + 1);
-    paymentList += `\n${nextLetter1}) A modo de incentivo de compra el traslado del proyecto es SIN COSTO para el COMPRADOR`;
-    paymentList += `\n${nextLetter2}) Nota: No se aceptará el cheque como medio de pago para cancelar. Los valores detallados incluyen IVA.`;
-  } else {
-    paymentList = `d) En este acto, se recibe el monto correspondiente al 30 % del total del proyecto por un valor de $2.331.000 (dos millones trescientos treinta y un mil pesos chilenos) en Transferencia bancaria a Cuenta Corriente 0-000-9960580-4 del Banco Santander, que el vendedor recibe a su entera satisfacción.
-e) El monto correspondiente al 30% del valor del proyecto, por un valor de $2.331.000 (dos millones trescientos treinta y un mil pesos chilenos) se hará efectivo en el avance ENTREGA DE RADIER CON ARRANQUES SANITARIOS INCLUÍDOS.
-f) El monto correspondiente al 30% del valor del proyecto, por un precio de $2.331.000 (dos millones trescientos treinta y un mil pesos chilenos) se pagará al momento de entrega de PANELES Y CERCHAS INSTALADAS.
-g) El monto correspondiente al 10% final del valor del proyecto, $777.000 (setecientos setenta y siete mil pesos chilenos) será cancelado a más tardar 5 días hábiles después de la entrega del proyecto contratado.
-h) A modo de incentivo de compra el traslado del proyecto es SIN COSTO para el COMPRADOR
-i) Nota: No se aceptará el cheque como medio de pago para cancelar. Los valores detallados incluyen IVA.`;
-  }
+  let paymentList = normalizedPayments.map((p, i) => formatPaymentInWords(p, i)).join('\n');
+  const nextLetter1 = String.fromCharCode(100 + normalizedPayments.length);
+  const nextLetter2 = String.fromCharCode(100 + normalizedPayments.length + 1);
+  paymentList += `\n${nextLetter1}) A modo de incentivo de compra el traslado del proyecto es SIN COSTO para el COMPRADOR`;
+  paymentList += `\n${nextLetter2}) Nota: No se aceptará el cheque como medio de pago para cancelar. Los valores detallados incluyen IVA.`;
 
+  const startDateString = startDate ? formatLongSpanishDate(startDate) : '[FECHA_INICIO]';
   const finalDateString = getBusinessDaysLaterDateString(startDate, plazoInstalacion);
+
+  const propiedadDetalle = `${(client.domicilio || '').toUpperCase()}${client.comuna ? `, COMUNA DE ${client.comuna.toUpperCase()}` : ''}${client.rol_propiedad ? `, ROL SII N° ${client.rol_propiedad}` : ''}`;
 
   if (isAnexo) {
     return `ANEXO AL CONTRATO DE COMPRAVENTA
 INVERSIONES E&E SPA Y ${client.nombre.toUpperCase()}
 
-En Osorno, a ${dateStringLiteral}, se acuerda el presente Anexo al Contrato de Compraventa celebrado entre INVERSIONES E&E, del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por SR EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2 TELEFONO: +569 7777 00 22, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Ciudad de Osorno, comuna de Osorno, X REGION, en adelante "EL VENDEDOR", por una parte; y, por la otra, don (a) ${client.nombre.toUpperCase()} RUT ${client.rut}, DOMICILIADO EN ${client.domicilio.toUpperCase()}, TELÉFONO ${client.telefono}, CORREO ELECTRONICO: ${client.correo}, en adelante "EL COMPRADOR".
+En ${ciudadSuscripcion}, a ${dateStringLiteral}, se acuerda el presente Anexo al Contrato de Compraventa celebrado entre INVERSIONES E&E, del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por SR EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2 TELEFONO: +569 7777 00 22, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Ciudad de Osorno, comuna de Osorno, X REGION, en adelante "EL VENDEDOR", por una parte; y, por la otra, don (a) ${client.nombre.toUpperCase()} RUT ${client.rut}, DOMICILIADO EN ${propiedadDetalle}, TELÉFONO ${client.telefono}, CORREO ELECTRONICO: ${client.correo}, en adelante "EL COMPRADOR".
 
 PRIMERO: ANTECEDENTES Y PARTIDAS CONTRATADAS
-Las partes de mutuo acuerdo convienen e incorporan bajo el amparo de la legislación chilena vigente, las siguientes especificaciones técnicas, obras y/o modificaciones adicionales fuera del alcance originalmente pactado en el contrato principal:
+Las partes de mutuo acuerdo convienen e incorporan bajo el amparo de la legislación chilena vigente, para el proyecto ubicado en ${propiedadDetalle}, las siguientes especificaciones técnicas, obras y/o modificaciones adicionales fuera del alcance originalmente pactado en el contrato principal:
 
 ${specList}
 
 SEGUNDO: PRECIO Y FORMA DE PAGO DE LOS ADICIONALES
-El valor de las obras y partidas adicionales pactadas en el presente anexo asciende a la suma de ${totalString}, el cual el COMPRADOR pagará de acuerdo a lo siguiente:
+El valor de las obras y partidas adicionales pactadas en el presente anexo asciende a la suma de ${totalString} (IVA incluido), el cual el COMPRADOR pagará de acuerdo a lo siguiente:
 ${paymentList}
 
-TERCERO: RATIFICACIÓN Y PLENA VIGENCIA
-Se deja expresa constancia que las presentes especificaciones pasan a formar parte íntegra del contrato de compraventa individualizado precedentemente. Se mantiene plenamente vigente todo lo no expresamente modificado por el presente instrumento, firmándose dos ejemplares del mismo tenor y fecha en Osorno.`;
+TERCERO: PLAZO Y RATIFICACIÓN DE VIGENCIA
+Las obras adicionales aquí pactadas contemplan un plazo de ejecución de hasta ${plazoInstalacion} DIAS HABILES a contar del ${startDateString} (hasta el ${finalDateString}), salvo condiciones climáticas adversas. Se deja expresa constancia que las presentes especificaciones pasan a formar parte íntegra del contrato de compraventa individualizado precedentemente. Se mantiene plenamente vigente todo lo no expresamente modificado por el presente instrumento, firmándose dos ejemplares del mismo tenor y fecha en ${ciudadSuscripcion}.`;
   }
 
   return `CONTRATO DE COMPRAVENTA
 INVERSIONES E&E SPA Y ${client.nombre.toUpperCase()}
 
-En Osorno, a ${dateStringLiteral}, entre INVERSIONES E&E , del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por SR EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2 TELEFONO: +569 7777 00 22, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Ciudad de Osorno, comuna de Osorno, X REGION, en adelante “EL VENDEDOR”, por una parte; y , por la otra, don (a) ${client.nombre.toUpperCase()} RUT ${client.rut} , DOMICILIADO EN ${client.domicilio.toUpperCase()}, TELÉFONO ${client.telefono}, CORREO ELECTRONICO: ${client.correo}, en adelante “EL COMPRADOR”, han convenido en celebrar el siguiente Contrato de Compraventa:
+En ${ciudadSuscripcion}, a ${dateStringLiteral}, entre INVERSIONES E&E , del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por SR EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2 TELEFONO: +569 7777 00 22, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Ciudad de Osorno, comuna de Osorno, X REGION, en adelante “EL VENDEDOR”, por una parte; y , por la otra, don (a) ${client.nombre.toUpperCase()} RUT ${client.rut} , DOMICILIADO EN ${propiedadDetalle}, TELÉFONO ${client.telefono}, CORREO ELECTRONICO: ${client.correo}, en adelante “EL COMPRADOR”, han convenido en celebrar el siguiente Contrato de Compraventa:
 
-PRIMERO: EL VENDEDOR es dueño del proyecto ${combinedDesc} EL CUAL SERÁ ADQUIRIDO POR EL COMPRADOR PARA SER INSTALADO EN TERRENO DE SU PROPIEDAD, UBICADO EN SU DOMICILIO.
+PRIMERO: EL VENDEDOR es dueño del proyecto ${combinedDesc} EL CUAL SERÁ ADQUIRIDO POR EL COMPRADOR PARA SER INSTALADO EN TERRENO DE SU PROPIEDAD, UBICADO EN ${propiedadDetalle}.
 
 El proyecto se ajustará estrictamente a las siguientes especificaciones técnicas y desglose de partidas:
 
@@ -290,7 +324,7 @@ QUINTO: Por el presente instrumento INVERSIONES E&E, vende al COMPRADOR, la prop
 SEXTO: El valor es la suma de ${totalString}${economicSummary} Que el COMPRADOR paga de la siguiente forma:
 ${paymentList}
 
-SÉPTIMO: EL VENDEDOR se obliga a poner en terreno del COMPRADOR EL PERSONAL E INSUMOS para el servicio el DIA [FECHA_INICIO], pudiendo prorrogar dicho plazo, unilateralmente si las condiciones climáticas no permitieran el inicio de obra.
+SÉPTIMO: EL VENDEDOR se obliga a poner en terreno del COMPRADOR EL PERSONAL E INSUMOS para el servicio el DIA ${startDateString}, pudiendo prorrogar dicho plazo, unilateralmente si las condiciones climáticas no permitieran el inicio de obra.
 
 Una vez el proyecto se encuentre en el terreno del EL COMPRADOR, INVERSIONES E&E, gozará de un plazo de hasta ${plazoInstalacion} DIAS HABILES para proceder al montaje de estos. Es decir, hasta el DIA ${finalDateString}. Dicho plazo contempla contar con las condiciones climáticas adecuadas.
 
@@ -320,56 +354,25 @@ export const generateContractText = async (
   startDate: string, 
   plazoInstalacion: number, 
   lugarSuscripcion: string, 
-  isAnexo: boolean
+  isAnexo: boolean,
+  contractDate?: string,
+  metodoPago?: string
 ): Promise<string> => {
-  const fallbackContractText = getLocalContractFallback(client, vendor, project, budget, payments, startDate, plazoInstalacion, lugarSuscripcion, isAnexo);
-  const rawModelName = project?.modelo || (project as any)?.nombre || 'Personalizada';
-  const uppercaseModelName = rawModelName.toUpperCase();
-
-  const prompt = `
-    Genera un ${isAnexo ? 'ANEXO AL CONTRATO' : 'CONTRATO DE COMPRAVENTA'} formal y detallado siguiendo estrictamente el siguiente modelo de texto continuo para la empresa "INVERSIONES E&E SPA".
-    
-    Debes sustituir las variables de acuerdo a los datos entregados, pero DEBES mantener el resto del texto LEGAL EXACTO, VERBATIM Y COMPLETO sin omitir ningún párrafo ni palabra.
-
-    DATOS DE VARIABLES COMPRADOR:
-    - Nombre Comprador: ${client.nombre.toUpperCase()}
-    - RUT Comprador: ${client.rut}
-    - Domicilio Comprador: ${client.domicilio.toUpperCase()}
-    - Teléfono Comprador: ${client.telefono}
-    - Correo Comprador: ${client.correo}
-
-    DATOS DE VARIABLES PROYECTO:
-    - Modelo de Casa: ${uppercaseModelName}
-    - Superficie: ${project.superficie_m2} m2
-    - Precio Total: $${budget.monto_total.toLocaleString('es-CL')} (${numberToSpanishWords(budget.monto_total)} pesos chilenos)
-    
-    MODELO OBLIGATORIO DE TEXTO COMPLETO A RESPONDER:
-    ${fallbackContractText}
-    
-    REGLAS CRÍTICAS DE RESPUESTA:
-    1. Devuelve SOLO el texto completo del contrato generado de acuerdo al modelo obligatorio suministrado. No agregues introducciones, ni comentarios, ni bloques de código de markdown como \`\`\` o similares.
-    2. En la cláusula PRIMERO (o en el desglose de partidas del anexo) debes incluir OBLIGATORIAMENTE todas y cada una de las partidas adicionales y nuevas con su cantidad de m², globales o unidades, precio unitario y total, tal como aparecen en el modelo suministrado.
-    3. No omitas ningún párrafo, especialmente los tres párrafos explicativos que se ubican entre SÉPTIMO y OCTAVO. Deben aparecer tal cual están descritos.
-    4. No agregues sección de firmas al final.
-    5. No uses otra letra o formato en SEXTO que d), e), f), g), h), i).
-  `;
-
-  try {
-    const res = await fetch('/api/gemini/contract', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, fallbackText: fallbackContractText }),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      return data.text || fallbackContractText;
-    }
-    return fallbackContractText;
-  } catch (error) {
-    console.warn("Usando contrato local fallback debido a error de red:", error);
-    return fallbackContractText;
-  }
+  // Deterministic legal contract builder guarantees 100% mathematical, item-level,
+  // and client-data congruence with the quoted Budget without AI drift or rounding errors.
+  return getLocalContractFallback(
+    client,
+    vendor,
+    project,
+    budget,
+    payments,
+    startDate,
+    plazoInstalacion,
+    lugarSuscripcion,
+    isAnexo,
+    contractDate,
+    metodoPago
+  );
 };
 
 export const analyzeBudgetFile = async (base64Data: string, mimeType: string): Promise<string> => {

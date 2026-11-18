@@ -1,10 +1,17 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Contract, Budget, Client, Project, Vendor, ContractStatus, PaymentInstallment, HouseModel } from '@/types';
 import { getContracts, saveContract, getBudgets, getClients, getProjects, getVendor, deleteContract, subscribeToContracts, subscribeToBudgets, subscribeToClients, subscribeToProjects, saveClient, subscribeToHouseModels } from '@/services/db';
 import { generateContractText, numberToSpanishWords } from '@/services/gemini';
+import {
+  calculateInstallmentsExact,
+  reconcileBudgetTotals,
+  getEffectiveBudgetTotalForContract,
+  verifyBudgetContractCongruence,
+  formatLongSpanishDate
+} from '@/lib/contractMath';
 import { uuid, compressImage } from '@/lib/utils';
-import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, Edit3, Eye, FileType, Trash2, Maximize2, AlertCircle, Calculator, ArrowRight, Upload, Image as ImageIcon, DollarSign } from 'lucide-react';
+import { Sparkles, FileText, CheckCircle, Printer, Plus, PenTool, X, Calendar, Edit3, Eye, FileType, Trash2, Maximize2, AlertCircle, Calculator, ArrowRight, Upload, Image as ImageIcon, DollarSign, ShieldCheck, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 // Input assets provided by the user
 const getSafeInputFile = (name: string): string => {
@@ -49,18 +56,24 @@ const ContractManager: React.FC = () => {
   const [vendor, setVendor] = useState<Vendor | null>(null);
 
   // Form State
+  const DEFAULT_STANDARD_PAYMENTS: PaymentInstallment[] = [
+    { descripcion: '30% - FIRMA DE CONTRATO (TRANSFERENCIA)', porcentaje: 30, monto: 0 },
+    { descripcion: '30% - ENTREGA DE RADIER CON ARRANQUES SANITARIOS', porcentaje: 30, monto: 0 },
+    { descripcion: '30% - MOMENTO DE ENTREGA PANELES Y CERCHAS INSTALADAS', porcentaje: 30, monto: 0 },
+    { descripcion: '10% - CONTRA ENTREGA FINAL (MAX 5 DÍAS HÁBILES)', porcentaje: 10, monto: 0 },
+  ];
+  const DEFAULT_ANNEX_PAYMENTS: PaymentInstallment[] = [
+    { descripcion: '50% - AL SUSCRIBIR ESTE ANEXO DE OBRAS ADICIONALES', porcentaje: 50, monto: 0 },
+    { descripcion: '50% - CONTRA ENTREGA FINAL DE LAS OBRAS ADICIONALES', porcentaje: 50, monto: 0 }
+  ];
+
   const [selectedBudgetId, setSelectedBudgetId] = useState('');
   const [contractDate, setContractDate] = useState(new Date().toISOString().split('T')[0]);
   const [startDate, setStartDate] = useState('');
   const [plazoInstalacion, setPlazoInstalacion] = useState(30);
   const [lugarSuscripcion, setLugarSuscripcion] = useState('Osorno');
   const [metodoPago, setMetodoPago] = useState<Contract['metodo_pago']>('Transferencia');
-  const [payments, setPayments] = useState<PaymentInstallment[]>([
-    { descripcion: '30% - FIRMA DE CONTRATO (TRANSFERENCIA)', porcentaje: 30, monto: 0 },
-    { descripcion: '30% - ENTREGA DE RADIER CON ARRANQUES SANITARIOS', porcentaje: 30, monto: 0 },
-    { descripcion: '30% - MOMENTO DE ENTREGA PANELES Y CERCHAS INSTALADAS', porcentaje: 30, monto: 0 },
-    { descripcion: '10% - CONTRA ENTREGA FINAL (MAX 5 DÍAS HÁBILES)', porcentaje: 10, monto: 0 },
-  ]);
+  const [payments, setPayments] = useState<PaymentInstallment[]>(DEFAULT_STANDARD_PAYMENTS);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedText, setGeneratedText] = useState('');
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('preview');
@@ -69,6 +82,8 @@ const ContractManager: React.FC = () => {
   const [parentContractId, setParentContractId] = useState<string | null>(null);
   const [isAnexo, setIsAnexo] = useState(false);
   const [m2Warning, setM2Warning] = useState<string | null>(null);
+  const [pendingBudgetToLoad, setPendingBudgetToLoad] = useState<{ budgetId: string; anexoParentId: string | null } | null>(null);
+  const skipNextAutoSyncRef = useRef(false);
 
   // Signing State
   const [signingContract, setSigningContract] = useState<Contract | null>(null);
@@ -81,18 +96,36 @@ const ContractManager: React.FC = () => {
   const [isDeletingContract, setIsDeletingContract] = useState(false);
   
   // Selection Logic Helpers
-  const selectedBudget = budgets.find(b => b.id === selectedBudgetId);
+  const rawSelectedBudget = budgets.find(b => b.id === selectedBudgetId);
+  const selectedBudget = useMemo(() => {
+    if (!rawSelectedBudget) return undefined;
+    const rec = reconcileBudgetTotals(rawSelectedBudget);
+    if (rec.itemsSum > 0 && rec.itemsSum !== rawSelectedBudget.monto_total) {
+      return {
+        ...rawSelectedBudget,
+        monto_base_modelo: rec.baseSum,
+        monto_adicionales: rec.adicSum,
+        monto_total: rec.itemsSum
+      };
+    }
+    return rawSelectedBudget;
+  }, [rawSelectedBudget]);
+
   const selectedClient = selectedBudget ? clients.find(c => c.id === selectedBudget.cliente_id) : null;
   const selectedProject = selectedBudget ? (projects.find(p => p.id === selectedBudget.proyecto_id) || houseModels.find(m => m.id === selectedBudget.proyecto_id) as any) : null;
+  const effectiveContractTotal = useMemo(
+    () => getEffectiveBudgetTotalForContract(selectedBudget, isAnexo),
+    [selectedBudget, isAnexo]
+  );
 
   useEffect(() => {
     if (selectedProject && selectedBudget) {
       const projectM2 = selectedProject.superficie_m2;
       const budgetM2 = selectedBudget.superficie_m2 || 0;
       
-      if (budgetM2 > 0 && Math.abs(projectM2 - budgetM2) > 0.01) {
+      if (budgetM2 > 0 && Math.abs(projectM2 - budgetM2) > 0.01 && !selectedBudget.es_combinacion_modelos) {
         const modelName = selectedProject.modelo || (selectedProject as any).nombre || 'Personalizada';
-        setM2Warning(`Diferencia de m² detectada: El modelo (${modelName}) es de ${projectM2}m², pero el presupuesto indica ${budgetM2}m². El contrato se generará con la superficie del presupuesto.`);
+        setM2Warning(`Diferencia de m² detectada: El modelo (${modelName}) es de ${projectM2}m², pero el presupuesto indica ${budgetM2}m². El contrato se generará con los ${budgetM2}m² del presupuesto.`);
       } else {
         setM2Warning(null);
       }
@@ -110,14 +143,17 @@ const ContractManager: React.FC = () => {
     
     getVendor().then(setVendor);
 
-    const timer = setTimeout(() => {
-        // Check for pending contract from budget
-        const pendingBudgetId = window.localStorage.getItem('pending_contract_budget_id');
-        if (pendingBudgetId) {
-            window.localStorage.removeItem('pending_contract_budget_id');
-            setSelectedBudgetId(pendingBudgetId);
-        }
-    }, 1000);
+    // Check for pending contract from Presupuestos / Seguimiento / SmartView immediately
+    const pendingBudgetId = window.localStorage.getItem('pending_contract_budget_id');
+    const pendingAnexoParentId = window.localStorage.getItem('pending_anexo_contract_id');
+    if (pendingBudgetId) {
+      window.localStorage.removeItem('pending_contract_budget_id');
+      if (pendingAnexoParentId) {
+        window.localStorage.removeItem('pending_anexo_contract_id');
+      }
+      setPendingBudgetToLoad({ budgetId: pendingBudgetId, anexoParentId: pendingAnexoParentId });
+      setIsCreating(true);
+    }
 
     return () => {
         unsubContracts();
@@ -125,29 +161,91 @@ const ContractManager: React.FC = () => {
         unsubClients();
         unsubProjects();
         if (typeof unsubHouseModels === 'function') unsubHouseModels();
-        clearTimeout(timer);
     };
   }, []);
 
-  useEffect(() => {
-    if (selectedBudget) {
-      setPayments(prev => prev.map(p => ({
-        ...p,
-        monto: Math.round(selectedBudget.monto_total * (p.porcentaje / 100))
-      })));
-      
-      // Inherit plazos/locations if budget has them
-      if (selectedBudget.plazo_instalacion_dias) setPlazoInstalacion(selectedBudget.plazo_instalacion_dias);
-      if (selectedBudget.lugar_suscripcion) setLugarSuscripcion(selectedBudget.lugar_suscripcion);
-      if (selectedBudget.fecha_inicio_obra) setStartDate(selectedBudget.fecha_inicio_obra);
+  const applyBudgetSelection = (b: Budget, annexOverride?: boolean, parentIdOverride?: string | null) => {
+    const targetIsAnexo = annexOverride !== undefined ? annexOverride : !!b.es_anexo;
+    setSelectedBudgetId(b.id);
+    setIsAnexo(targetIsAnexo);
+    setParentContractId(parentIdOverride !== undefined ? parentIdOverride : (b.parent_contract_id || null));
+    setEditingContractId(null);
+    setGeneratedText('');
+
+    const targetTotal = getEffectiveBudgetTotalForContract(b, targetIsAnexo);
+    const baseTemplate = targetIsAnexo ? DEFAULT_ANNEX_PAYMENTS : DEFAULT_STANDARD_PAYMENTS;
+    setPayments(calculateInstallmentsExact(targetTotal, baseTemplate));
+
+    if (b.plazo_instalacion_dias) {
+      setPlazoInstalacion(b.plazo_instalacion_dias);
+    } else {
+      setPlazoInstalacion(targetIsAnexo ? 15 : 30);
     }
-  }, [selectedBudget]);
+    if (b.lugar_suscripcion) setLugarSuscripcion(b.lugar_suscripcion);
+    if (b.fecha_inicio_obra) setStartDate(b.fecha_inicio_obra);
+    if (b.forma_pago) setMetodoPago(b.forma_pago);
+  };
+
+  // Resolve pending budget once budgets subscription populates
+  useEffect(() => {
+    if (!pendingBudgetToLoad) return;
+    const found = budgets.find(b => b.id === pendingBudgetToLoad.budgetId);
+    if (found) {
+      skipNextAutoSyncRef.current = true;
+      applyBudgetSelection(
+        found,
+        !!(found.es_anexo || pendingBudgetToLoad.anexoParentId),
+        pendingBudgetToLoad.anexoParentId || found.parent_contract_id || null
+      );
+      setPendingBudgetToLoad(null);
+    }
+  }, [pendingBudgetToLoad, budgets]);
+
+  // Keep payment amounts aligned with budget updates only when creating a fresh contract (never overwrite saved contracts)
+  useEffect(() => {
+    if (!selectedBudget) return;
+    if (skipNextAutoSyncRef.current) {
+      skipNextAutoSyncRef.current = false;
+      return;
+    }
+    if (editingContractId) return;
+
+    setPayments(prev => calculateInstallmentsExact(effectiveContractTotal, prev));
+  }, [selectedBudget, effectiveContractTotal, editingContractId]);
 
   // Calculations for validation
-  const totalPercentage = payments.reduce((sum, p) => sum + p.porcentaje, 0);
-  const totalAmount = payments.reduce((sum, p) => sum + p.monto, 0);
-  const budgetAmount = selectedBudget ? selectedBudget.monto_total : 0;
+  const totalPercentage = payments.reduce((sum, p) => sum + (Number(p.porcentaje) || 0), 0);
+  const totalAmount = payments.reduce((sum, p) => sum + Math.round(Number(p.monto) || 0), 0);
+  const budgetAmount = effectiveContractTotal;
   const isTotalValid = Math.abs(totalPercentage - 100) < 0.1; // Float tolerance
+
+  const congruenceReport = useMemo(
+    () =>
+      verifyBudgetContractCongruence({
+        budget: selectedBudget,
+        client: selectedClient,
+        project: selectedProject,
+        payments,
+        contractDate,
+        startDate,
+        plazoInstalacion,
+        lugarSuscripcion,
+        isAnexo,
+        generatedText
+      }),
+    [
+      selectedBudget,
+      selectedClient,
+      selectedProject,
+      payments,
+      contractDate,
+      startDate,
+      plazoInstalacion,
+      lugarSuscripcion,
+      isAnexo,
+      generatedText
+    ]
+  );
 
   const togglePaymentStatus = async (contract: Contract, paymentIdx: number) => {
     const updatedPayments = [...contract.pautas_pago];
@@ -227,59 +325,38 @@ const ContractManager: React.FC = () => {
     setGeneratedText('');
     
     try {
+        const normalizedPayments = calculateInstallmentsExact(effectiveContractTotal, payments);
+        setPayments(normalizedPayments);
+
         const text = await generateContractText(
             selectedClient!, 
             vendor!, 
             selectedProject!, 
             selectedBudget!, 
-            payments, 
+            normalizedPayments, 
             startDate,
             plazoInstalacion,
             lugarSuscripcion,
-            isAnexo
+            isAnexo,
+            contractDate,
+            metodoPago
         );
         
-        const contractParts = contractDate.split('-');
-        let dateObj: Date;
-        if (contractParts.length === 3) {
-            dateObj = new Date(parseInt(contractParts[0], 10), parseInt(contractParts[1], 10) - 1, parseInt(contractParts[2], 10));
-        } else {
-            dateObj = new Date(contractDate);
-        }
-        const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-        const dateStringLiteral = `${dateObj.getDate()} de ${months[dateObj.getMonth()]} de ${dateObj.getFullYear()}`;
-        const dateShort = `${dateObj.getMonth() + 1}/${dateObj.getDate()}/${dateObj.getFullYear()}`;
-        
         let finalText = text;
-        if (finalText.includes('[FECHA_LARGA]')) {
-            finalText = finalText.replaceAll('[FECHA_LARGA]', `${dateShort} ${dateStringLiteral}`);
-        } else if (finalText.includes('[FECHA]')) {
-             finalText = finalText.replaceAll('[FECHA]', `${dateShort} ${dateStringLiteral}`);
+        if (finalText.includes('[FECHA_LARGA]') || finalText.includes('[FECHA]')) {
+            const dateStringLiteral = formatLongSpanishDate(contractDate);
+            finalText = finalText.replaceAll('[FECHA_LARGA]', dateStringLiteral).replaceAll('[FECHA]', dateStringLiteral);
         }
         
         if (finalText.includes('[FECHA_INICIO]')) {
-            const startParts = startDate.split('-');
-            let startObj: Date;
-            if (startParts.length === 3) {
-                startObj = new Date(parseInt(startParts[0], 10), parseInt(startParts[1], 10) - 1, parseInt(startParts[2], 10));
-            } else {
-                startObj = new Date(startDate);
-            }
-            const startString = `${startObj.getDate()} de ${months[startObj.getMonth()]} de ${startObj.getFullYear()}`;
+            const startString = formatLongSpanishDate(startDate);
             finalText = finalText.replaceAll('[FECHA_INICIO]', startString);
         }
 
-        if (text.startsWith("Error de conexión con IA")) {
-             window.dispatchEvent(new CustomEvent('app-notification', { 
-                detail: { message: 'Error con Gemini. Revise la consola.', type: 'error' } 
-            }));
-            setViewMode('edit');
-        } else {
-            window.dispatchEvent(new CustomEvent('app-notification', { 
-                detail: { message: 'Contrato generado.', type: 'success' } 
-            }));
-            setViewMode('preview');
-        }
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+            detail: { message: 'Borrador generado con valores 100% sincronizados.', type: 'success' } 
+        }));
+        setViewMode('preview');
         setGeneratedText(finalText);
     } catch (err) {
         console.error(err);
@@ -301,6 +378,13 @@ const ContractManager: React.FC = () => {
     if (!startDate) {
         window.dispatchEvent(new CustomEvent('app-notification', { 
             detail: { message: 'Debe ingresar la fecha de inicio de obra', type: 'error' } 
+        }));
+        return;
+    }
+
+    if (!isTotalValid) {
+        window.dispatchEvent(new CustomEvent('app-notification', { 
+            detail: { message: `Los porcentajes de pago suman ${totalPercentage}%. Deben sumar 100%.`, type: 'error' } 
         }));
         return;
     }
@@ -329,6 +413,24 @@ const ContractManager: React.FC = () => {
         }));
         return;
     }
+
+    const exactPayments = calculateInstallmentsExact(effectiveContractTotal, payments);
+    let finalContractText = generatedText;
+    if (!finalContractText || !congruenceReport.isDraftSynced) {
+      finalContractText = await generateContractText(
+        selectedClient,
+        vendor,
+        selectedProject,
+        selectedBudget,
+        exactPayments,
+        startDate,
+        plazoInstalacion,
+        lugarSuscripcion,
+        isAnexo,
+        contractDate,
+        metodoPago
+      );
+    }
     
     let deliveryDate: Date;
     if (partsS.length === 3) {
@@ -348,6 +450,18 @@ const ContractManager: React.FC = () => {
     const deliveryDay = String(deliveryDate.getDate()).padStart(2, '0');
     const deliveryDateStr = `${deliveryYear}-${deliveryMonth}-${deliveryDay}`;
 
+    const existingContract = editingContractId ? contracts.find(c => c.id === editingContractId) : undefined;
+    const preservedPautas = exactPayments.map((p, idx) => {
+      const prev = existingContract?.pautas_pago?.[idx];
+      return {
+        ...p,
+        pagado: prev ? !!prev.pagado : false,
+        fecha_pago: prev?.fecha_pago
+      };
+    });
+    const allPaid = preservedPautas.length > 0 && preservedPautas.every(p => p.pagado);
+    const anyPaid = preservedPautas.some(p => p.pagado);
+
     // Create or update the contract record with SNAPSHOTS
     const contractData: Contract = {
       id: editingContractId || uuid(),
@@ -356,14 +470,14 @@ const ContractManager: React.FC = () => {
       proyecto_id: selectedProject.id,
       presupuesto_id: selectedBudget.id,
       fecha_contrato: contractDate,
-      monto_total: selectedBudget.monto_total,
+      monto_total: effectiveContractTotal,
       metodo_pago: metodoPago,
-      cuotas_pago: payments.length,
-      estado_pago: 'Pendiente',
-      hitos_pago: payments,
-      pautas_pago: payments.map(p => ({ ...p, pagado: false })),
-      estado: ContractStatus.GENERATED,
-      contenido_texto: generatedText,
+      cuotas_pago: exactPayments.length,
+      estado_pago: allPaid ? 'Pagado' : (anyPaid ? 'Parcial' : 'Pendiente'),
+      hitos_pago: exactPayments,
+      pautas_pago: preservedPautas,
+      estado: existingContract?.estado || ContractStatus.GENERATED,
+      contenido_texto: finalContractText,
       
       // Plazos y Fechas
       plazo_instalacion_dias: plazoInstalacion,
@@ -374,6 +488,12 @@ const ContractManager: React.FC = () => {
       cliente_snapshot: selectedClient,
       proyecto_snapshot: selectedProject,
       presupuesto_snapshot: selectedBudget,
+      firma_cliente: existingContract?.firma_cliente,
+      firma_vendedor: existingContract?.firma_vendedor,
+      fecha_firma: existingContract?.fecha_firma,
+      documento_archivo_url: existingContract?.documento_archivo_url,
+      documento_archivo_tipo: existingContract?.documento_archivo_tipo,
+      fecha_escaneo: existingContract?.fecha_escaneo,
       es_anexo: isAnexo,
       parent_contract_id: parentContractId || undefined,
       es_combinacion_modelos: selectedBudget.es_combinacion_modelos,
@@ -399,7 +519,7 @@ const ContractManager: React.FC = () => {
     setStartDate('');
     
     window.dispatchEvent(new CustomEvent('app-notification', { 
-        detail: { message: 'Contrato registrado en base de datos', type: 'success' } 
+        detail: { message: 'Contrato registrado en base de datos con valores verificados', type: 'success' } 
     }));
   };
 
@@ -427,6 +547,7 @@ const ContractManager: React.FC = () => {
   };
 
   const handleEditSavedContract = (contract: Contract) => {
+    skipNextAutoSyncRef.current = true;
     setEditingContractId(contract.id);
     setIsAnexo(contract.es_anexo || false);
     setParentContractId(contract.parent_contract_id || null);
@@ -437,12 +558,13 @@ const ContractManager: React.FC = () => {
     setPlazoInstalacion(contract.plazo_instalacion_dias || 30);
     setLugarSuscripcion(contract.lugar_suscripcion || 'Osorno');
     setMetodoPago(contract.metodo_pago);
-    setPayments(contract.hitos_pago);
+    setPayments(contract.hitos_pago || []);
     setIsCreating(true);
     setViewMode('edit');
   };
 
   const handleCreateAnnex = (contract: Contract) => {
+    skipNextAutoSyncRef.current = true;
     setParentContractId(contract.id);
     setIsAnexo(true);
     setEditingContractId(null);
@@ -452,31 +574,32 @@ const ContractManager: React.FC = () => {
     const parentIdx = sortedContracts.findIndex(c => c.id === contract.id) + 1;
     const parentSeqText = parentIdx > 0 ? String(parentIdx).padStart(3, '0') : '001';
     const cli = contract.cliente_snapshot || clients.find(c => c.id === contract.cliente_id);
-    const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-    const today = new Date();
-    const todayStr = `${today.getDate()} de ${months[today.getMonth()]} de ${today.getFullYear()}`;
+    const todayIso = new Date().toISOString().split('T')[0];
+    const todayStr = formatLongSpanishDate(todayIso);
 
     const contractBudget = contract.presupuesto_snapshot || budgets.find(b => b.id === contract.presupuesto_id);
-    const adicItems = (contractBudget?.detalle_items || []).filter(i => !i.descripcion.includes('CASA MODELO') && i.precio_unitario > 0);
-    const adicTotal = adicItems.reduce((s, i) => s + i.total, 0);
+    const reconciled = contractBudget ? reconcileBudgetTotals(contractBudget) : { adicItems: [], adicSum: 0 };
+    const adicItems = reconciled.adicItems.filter(i => i.total > 0);
+    const adicTotal = reconciled.adicSum;
 
     const adicListText = adicItems.length > 0
       ? adicItems.map(i => `- ${i.descripcion.toUpperCase()} | Cantidad: ${i.cantidad} ${i.unidad || 'un'} | Precio Unitario: $${i.precio_unitario.toLocaleString('es-CL')} CLP | Subtotal: $${i.total.toLocaleString('es-CL')} CLP`).join('\n')
       : `- [Indicar obras adicionales solicitadas: Radier reforzado con zapata 40x40, encamisado OSB en paredes o techumbre, vigas a la vista en living-comedor y cocina, o revestimiento exterior en Siding/Norway]
 - [Detallar especificaciones de materiales y partidas requeridas con cantidad, precio unitario y total]`;
 
-    const totalText = adicTotal > 0 
-      ? `$${adicTotal.toLocaleString('es-CL')} CLP (${numberToSpanishWords(adicTotal)} pesos chilenos)` 
-      : `$${contract.monto_total.toLocaleString('es-CL')} CLP`;
+    const annexTotal = adicTotal > 0 ? adicTotal : 0;
+    const exactAnnexPayments = calculateInstallmentsExact(annexTotal, DEFAULT_ANNEX_PAYMENTS);
+    const totalText = `$${annexTotal.toLocaleString('es-CL')} (${numberToSpanishWords(annexTotal)} pesos chilenos)`;
 
-    // Formal legal Annex template according to Chilean legislation
+    const propiedadDetalle = `${(cli?.domicilio || '').toUpperCase()}${cli?.comuna ? `, Comuna de ${cli.comuna}` : ''}${cli?.rol_propiedad ? `, Rol SII N° ${cli.rol_propiedad}` : ''}`;
+
     setGeneratedText(`ANEXO N° 01 AL CONTRATO DE COMPRAVENTA E INSTALACIÓN N° ${parentSeqText}
 INVERSIONES E&E SPA Y ${(cli?.nombre || 'EL COMPRADOR').toUpperCase()}
 
-En Osorno, a ${todayStr}, entre INVERSIONES E&E SPA, del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por don EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Comuna de Osorno, en adelante "EL VENDEDOR", por una parte; y don (a) ${(cli?.nombre || 'COMPRADOR').toUpperCase()}, RUT ${cli?.rut || ''}, domiciliado en ${(cli?.domicilio || '').toUpperCase()}, Teléfono: ${cli?.telefono || ''}, en adelante "EL COMPRADOR", por la otra; se conviene el presente ANEXO ACCESORIO AL CONTRATO PRINCIPAL DE COMPRAVENTA N° ${parentSeqText} de fecha ${contract.fecha_contrato}:
+En ${contract.lugar_suscripcion || 'Osorno'}, a ${todayStr}, entre INVERSIONES E&E SPA, del Giro OTRAS ACTIVIDADES ESPECIALIZADAS DE CONSTRUCCION, R.U.T. 78.210.119-6 representada por don EDUARDO HUMBERTO SOTO ALVARADO RUT 15.272.818-2, domiciliado para estos efectos en RUTA U55V KM 12 ESQUINA CRUCE LA ESTRELLA S/N, Comuna de Osorno, en adelante "EL VENDEDOR", por una parte; y don (a) ${(cli?.nombre || 'COMPRADOR').toUpperCase()}, RUT ${cli?.rut || ''}, domiciliado en ${propiedadDetalle}, Teléfono: ${cli?.telefono || ''}, en adelante "EL COMPRADOR", por la otra; se conviene el presente ANEXO ACCESORIO AL CONTRATO PRINCIPAL DE COMPRAVENTA N° ${parentSeqText} de fecha ${contract.fecha_contrato}:
 
 PRIMERO: ANTECEDENTES
-Con fecha ${contract.fecha_contrato}, las partes suscribieron contrato de compraventa e instalación de vivienda prefabricada en el terreno ubicado en ${(cli?.domicilio || '').toUpperCase()}${cli?.rol_propiedad ? `, Rol de Avalúo SII N° ${cli.rol_propiedad}` : ''}${cli?.comuna ? `, Comuna de ${cli.comuna}` : ''}.
+Con fecha ${contract.fecha_contrato}, las partes suscribieron contrato de compraventa e instalación de vivienda prefabricada en el terreno ubicado en ${propiedadDetalle}.
 
 SEGUNDO: OBRAS Y MEJORAMIENTOS ADICIONALES
 A expresa solicitud del COMPRADOR, y fuera del alcance originalmente pactado en el contrato principal, se conviene la ejecución de las siguientes OBRAS Y MEJORAMIENTOS ADICIONALES:
@@ -484,61 +607,61 @@ ${adicListText}
 
 TERCERO: PRECIO Y FORMA DE PAGO DE LOS ADICIONALES
 El valor de las obras adicionales pactadas en el presente anexo asciende a la suma de ${totalText} (IVA incluido), el cual el COMPRADOR pagará de la siguiente forma:
-a) 50% al momento de suscripción del presente anexo complementario.
-b) 50% una vez finalizada la ejecución de los adicionales pactados a entera satisfacción.
+d) El monto correspondiente al ${exactAnnexPayments[0].porcentaje}% (${exactAnnexPayments[0].descripcion}), por un valor de $${exactAnnexPayments[0].monto.toLocaleString('es-CL')} (${numberToSpanishWords(exactAnnexPayments[0].monto)} pesos chilenos).
+e) El monto correspondiente al ${exactAnnexPayments[1].porcentaje}% (${exactAnnexPayments[1].descripcion}), por un valor de $${exactAnnexPayments[1].monto.toLocaleString('es-CL')} (${numberToSpanishWords(exactAnnexPayments[1].monto)} pesos chilenos).
 
 CUARTO: PLAZO DE EJECUCIÓN
-Las partes acuerdan que las presentes obras se ejecutarán dentro del plazo estipulado para la obra principal, o con una prórroga de ... días hábiles adicionales si las condiciones técnicas o climáticas lo requiriesen.
+Las partes acuerdan que las presentes obras se ejecutarán dentro del plazo estipulado para la obra principal, o con una prórroga de 15 días hábiles adicionales si las condiciones técnicas o climáticas lo requiriesen.
 
 QUINTO: RATIFICACIÓN Y PLENA VIGENCIA
 En todo lo no expresamente modificado o complementado por el presente anexo, permanecen plenamente vigentes y ratificadas todas las estipulaciones, penalidades, garantías y cláusulas del contrato principal de compraventa N° ${parentSeqText}.
 
-Para constancia de lo acordado, se suscribe en dos ejemplares del mismo tenor y fecha en Osorno.`);
+Para constancia de lo acordado, se suscribe en dos ejemplares del mismo tenor y fecha en ${contract.lugar_suscripcion || 'Osorno'}.`);
     
-    setContractDate(new Date().toISOString().split('T')[0]);
+    setContractDate(todayIso);
     setStartDate(contract.fecha_inicio_obra || '');
     setPlazoInstalacion(15);
     setLugarSuscripcion(contract.lugar_suscripcion || 'Osorno');
     setMetodoPago(contract.metodo_pago);
-    setPayments([
-      { descripcion: '50% - AL SUSCRIBIR ESTE ANEXO DE OBRAS ADICIONALES', porcentaje: 50, monto: 0 },
-      { descripcion: '50% - CONTRA ENTREGA FINAL DE LAS OBRAS ADICIONALES', porcentaje: 50, monto: 0 }
-    ]);
+    setPayments(exactAnnexPayments);
     
     setIsCreating(true);
     setViewMode('edit');
     
     window.dispatchEvent(new CustomEvent('app-notification', { 
-        detail: { message: 'Creando Anexo al Contrato. Edita las partidas o cuotas según lo acordado.', type: 'info' } 
+        detail: { message: 'Creando Anexo al Contrato. Valores de adicionales sincronizados.', type: 'info' } 
     }));
   };
 
   // --- Payment Plan Editing Logic ---
   const updatePayment = (idx: number, field: 'porcentaje' | 'descripcion', value: string | number) => {
-    if(!selectedBudget) return;
+    if (!selectedBudget) return;
     setPayments(prev => {
-        const next = [...prev];
-        const currentItem = { ...next[idx] };
-        
+      const next = prev.map((item, i) => {
+        if (i !== idx) return item;
         if (field === 'porcentaje') {
-            const pct = Number(value);
-            currentItem.porcentaje = pct;
-            currentItem.monto = Math.round(selectedBudget.monto_total * (pct / 100));
-        } else {
-            currentItem.descripcion = String(value);
+          return { ...item, porcentaje: Number(value) || 0 };
         }
-        
-        next[idx] = currentItem;
-        return next;
+        return { ...item, descripcion: String(value) };
+      });
+      return field === 'porcentaje'
+        ? calculateInstallmentsExact(effectiveContractTotal, next)
+        : next;
     });
   };
 
   const addPayment = () => {
-      setPayments(prev => [...prev, { descripcion: 'Nuevo Pago', porcentaje: 0, monto: 0 }]);
+    setPayments(prev => {
+      const next = [...prev, { descripcion: 'Nuevo Pago', porcentaje: 0, monto: 0 }];
+      return calculateInstallmentsExact(effectiveContractTotal, next);
+    });
   };
 
   const removePayment = (idx: number) => {
-      setPayments(prev => prev.filter((_, i) => i !== idx));
+    setPayments(prev => {
+      const next = prev.filter((_, i) => i !== idx);
+      return calculateInstallmentsExact(effectiveContractTotal, next);
+    });
   };
 
   const downloadWord = () => {
@@ -706,9 +829,9 @@ Para constancia de lo acordado, se suscribe en dos ejemplares del mismo tenor y 
         // Process bold markdown
         content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
-        // Handle lettered lists a) b) c) d) ... to j)
-        if (/(^|\n)[a-j]\)/i.test(content)) {
-            const items = content.split(/(^|\n)([a-j]\))/i);
+        // Handle lettered lists a) b) c) d) ... to z)
+        if (/(^|\n)[a-z]\)/i.test(content)) {
+            const items = content.split(/(^|\n)([a-z]\))/i);
             let reconstructed = '';
             let introductoryText = items[0].trim();
             
@@ -1075,16 +1198,31 @@ Para constancia de lo acordado, se suscribe en dos ejemplares del mismo tenor y 
             <p className="text-xs text-slate-500 mb-4">Selecciona el presupuesto aprobado. Esto cargará automáticamente los montos y datos técnicos.</p>
             
             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Presupuesto Vinculado</label>
-            <select className="w-full p-2.5 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-orange-500 transition-all cursor-pointer" 
-              value={selectedBudgetId} onChange={e => setSelectedBudgetId(e.target.value)}>
+            <select
+              className="w-full p-2.5 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-orange-500 transition-all cursor-pointer" 
+              value={selectedBudgetId}
+              onChange={e => {
+                const chosen = budgets.find(b => b.id === e.target.value);
+                if (chosen) {
+                  skipNextAutoSyncRef.current = true;
+                  applyBudgetSelection(chosen);
+                } else {
+                  setSelectedBudgetId('');
+                  setGeneratedText('');
+                }
+              }}
+            >
               <option value="">-- Seleccionar una cotización --</option>
               {budgets.map(b => {
                 const c = clients.find(cl => cl.id === b.cliente_id);
                 const p = projects.find(pr => pr.id === b.proyecto_id) || houseModels.find(hm => hm.id === b.proyecto_id);
-                const modelName = p?.modelo || (p as any)?.nombre || 'Personalizada';
+                const modelName = b.es_combinacion_modelos && b.modelos_combinados?.length
+                  ? `Combinación (${b.modelos_combinados.length} mód.)`
+                  : (p?.modelo || (p as any)?.nombre || 'Personalizada');
+                const recTotal = reconcileBudgetTotals(b).itemsSum;
                 return (
                   <option key={b.id} value={b.id}>
-                    {c?.nombre || 'S/N'} - {modelName} (${b.monto_total.toLocaleString()})
+                    {c?.nombre || 'S/N'} - {modelName} (${recTotal.toLocaleString('es-CL')})
                   </option>
                 );
               })}
@@ -1097,35 +1235,122 @@ Para constancia de lo acordado, se suscribe en dos ejemplares del mismo tenor y 
                   <span className="font-bold text-slate-800">{selectedClient.nombre}</span>
                 </div>
                 <div className="flex justify-between border-b border-orange-100 pb-1">
-                  <span className="text-slate-500">Proyecto:</span>
-                  <span className="font-bold text-slate-800">{selectedProject.modelo || (selectedProject as any).nombre || 'Personalizada'}</span>
+                  <span className="text-slate-500">RUT / Fono:</span>
+                  <span className="font-semibold text-slate-700">{selectedClient.rut} • {selectedClient.telefono || 'S/T'}</span>
                 </div>
+                <div className="flex justify-between border-b border-orange-100 pb-1 gap-2">
+                  <span className="text-slate-500 shrink-0">Terreno / ROL:</span>
+                  <span className="font-semibold text-slate-700 text-right truncate" title={selectedClient.domicilio}>
+                    {selectedClient.domicilio}{selectedClient.rol_propiedad ? ` (ROL ${selectedClient.rol_propiedad})` : ''}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-orange-100 pb-1 gap-2">
+                  <span className="text-slate-500 shrink-0">Proyecto:</span>
+                  <span className="font-bold text-slate-800 text-right">
+                    {selectedBudget.es_combinacion_modelos && selectedBudget.modelos_combinados?.length
+                      ? selectedBudget.modelos_combinados.map(m => `${m.nombre} (${m.superficie_m2}m²)`).join(' + ')
+                      : `${selectedProject.modelo || (selectedProject as any).nombre || 'Personalizada'} (${selectedBudget.superficie_m2 || selectedProject.superficie_m2}m²)`}
+                  </span>
+                </div>
+
+                {/* Line-item breakdown summary from Budget */}
+                {(selectedBudget.detalle_items || []).length > 0 && (
+                  <div className="bg-white/80 rounded-lg p-2.5 border border-orange-200/70 space-y-1 max-h-40 overflow-y-auto">
+                    <p className="text-[10px] font-black uppercase text-slate-500 mb-1">
+                      Partidas Cotizadas ({selectedBudget.detalle_items.length})
+                    </p>
+                    {selectedBudget.detalle_items.map((item, idx) => (
+                      <div key={item.id || idx} className="flex justify-between gap-2 text-[11px] border-b border-slate-100 last:border-0 pb-1 last:pb-0">
+                        <span className="text-slate-700 truncate" title={`${item.descripcion} (${item.cantidad} ${item.unidad} x $${item.precio_unitario.toLocaleString('es-CL')})`}>
+                          {item.cantidad} {item.unidad} • {item.descripcion}
+                        </span>
+                        <span className="font-mono font-bold text-slate-800 shrink-0">
+                          ${item.total.toLocaleString('es-CL')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {m2Warning && (
                   <div className="bg-amber-100/50 p-3 rounded-lg border border-amber-200 mt-2">
                     <div className="flex gap-2">
                       <AlertCircle className="text-amber-600 shrink-0" size={14} />
                       <div>
-                        <p className="text-[10px] font-bold text-amber-900 uppercase">Inconsistencia de Superficie</p>
+                        <p className="text-[10px] font-bold text-amber-900 uppercase">Ajuste de Superficie Aplicado</p>
                         <p className="text-[11px] text-amber-800 leading-tight my-1">{m2Warning}</p>
-                        <div className="mt-2 space-y-1">
-                          <p className="text-[9px] font-bold text-amber-900 uppercase">¿Cómo corregir?</p>
-                          <ol className="list-decimal list-inside text-[10px] text-amber-800 space-y-0.5">
-                            <li>Vaya al menú de <b>Presupuestos</b>.</li>
-                            <li>Busque este presupuesto y haga clic en <b>Editar</b>.</li>
-                            <li>En <b>Superficie y Radier</b>, ajuste los m² del radier o modelo.</li>
-                            <li>Guarde y vuelva aquí para re-seleccionar.</li>
-                          </ol>
-                        </div>
                       </div>
                     </div>
                   </div>
                 )}
 
                 <div className="flex justify-between pt-1">
-                  <span className="text-slate-500">Valor Total:</span>
-                  <span className="font-bold text-orange-700 text-sm">${selectedBudget.monto_total.toLocaleString()}</span>
+                  <span className="text-slate-500 font-bold">{isAnexo ? 'Total Anexo:' : 'Total Cotización:'}</span>
+                  <span className="font-black text-orange-700 text-sm font-mono">${effectiveContractTotal.toLocaleString('es-CL')} CLP</span>
                 </div>
+              </div>
+            )}
+
+            {/* Auditoría de Congruencia: Cotización vs Borrador */}
+            {selectedBudget && (
+              <div className={`mt-4 p-4 rounded-xl border text-xs space-y-2.5 ${
+                congruenceReport.isDraftSynced
+                  ? 'bg-emerald-50/80 border-emerald-200'
+                  : congruenceReport.isDraftPresent
+                    ? 'bg-red-50/80 border-red-200'
+                    : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-black uppercase text-[11px] flex items-center gap-1.5 text-slate-800">
+                    <ShieldCheck size={15} className={congruenceReport.isDraftSynced ? 'text-emerald-600' : 'text-amber-600'} />
+                    Auditoría de Congruencia
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                    congruenceReport.isDraftSynced
+                      ? 'bg-emerald-600 text-white'
+                      : congruenceReport.isDraftPresent
+                        ? 'bg-red-600 text-white'
+                        : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {congruenceReport.isDraftSynced
+                      ? '100% Congruente'
+                      : congruenceReport.isDraftPresent
+                        ? 'Requiere Sincronizar'
+                        : 'Sin Borrador'}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {congruenceReport.checks.map(chk => (
+                    <div key={chk.id} className="bg-white/90 px-2.5 py-1.5 rounded-lg border border-slate-200/80 flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold text-slate-700 uppercase">{chk.label}</p>
+                        <p className="text-[10px] text-slate-500 leading-tight">{chk.detail}</p>
+                      </div>
+                      <span className={`text-[10px] font-black shrink-0 px-1.5 py-0.5 rounded ${
+                        chk.status === 'ok'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : chk.status === 'warning'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-red-100 text-red-700'
+                      }`}>
+                        {chk.status === 'ok' ? 'OK' : chk.status === 'warning' ? 'FALTA' : 'DESFASE'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {congruenceReport.isDraftPresent && !congruenceReport.isDraftSynced && (
+                  <button
+                    type="button"
+                    onClick={handleGenerate}
+                    disabled={isGenerating || !startDate || !isTotalValid}
+                    className="w-full py-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-400 text-white rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition"
+                  >
+                    <RefreshCw size={13} />
+                    <span>Sincronizar y Regenerar Borrador</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1315,7 +1540,7 @@ Para constancia de lo acordado, se suscribe en dos ejemplares del mismo tenor y 
                     proyecto_id: selectedProject?.id || '',
                     presupuesto_id: selectedBudget?.id || '',
                     fecha_contrato: contractDate,
-                    monto_total: selectedBudget?.monto_total || 0,
+                    monto_total: effectiveContractTotal,
                     metodo_pago: metodoPago,
                     cuotas_pago: payments.length,
                     estado_pago: 'Pendiente',
@@ -1336,7 +1561,22 @@ Para constancia de lo acordado, se suscribe en dos ejemplares del mismo tenor y 
                 </button>
             )}
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+                 {selectedBudget && generatedText && !congruenceReport.isDraftSynced && (
+                    <button
+                      onClick={handleGenerate}
+                      disabled={isGenerating || !startDate || !isTotalValid}
+                      className="px-3 py-1.5 bg-amber-100 text-amber-800 border border-amber-300 text-xs rounded-lg hover:bg-amber-200 flex items-center gap-1.5 font-bold transition"
+                      title="El presupuesto o plan de pagos cambió respecto al borrador actual"
+                    >
+                      <RefreshCw size={14} /> Sincronizar Valores
+                    </button>
+                 )}
+                 {selectedBudget && generatedText && congruenceReport.isDraftSynced && (
+                    <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold flex items-center gap-1">
+                      <CheckCircle2 size={14} /> Congruente
+                    </span>
+                 )}
                  {generatedText && !generatedText.startsWith("Error") && (
                     <button onClick={downloadWord} className="p-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition" title="Descargar Word">
                         <FileType size={18} />
@@ -1542,7 +1782,19 @@ Para constancia de lo acordado, se suscribe en dos ejemplares del mismo tenor y 
             <h3 className="text-2xl font-bold text-slate-800">Contratos y Pagos</h3>
             <p className="text-slate-500 text-sm">Registro de documentos legales y gestión de cuotas.</p>
         </div>
-        <button onClick={() => setIsCreating(true)} className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl flex items-center gap-2 hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition font-medium">
+        <button
+          onClick={() => {
+            setEditingContractId(null);
+            setIsAnexo(false);
+            setParentContractId(null);
+            setSelectedBudgetId('');
+            setGeneratedText('');
+            setStartDate('');
+            setPayments(DEFAULT_STANDARD_PAYMENTS);
+            setIsCreating(true);
+          }}
+          className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl flex items-center gap-2 hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition font-medium"
+        >
           <Plus size={20} /> Nuevo Contrato
         </button>
       </div>

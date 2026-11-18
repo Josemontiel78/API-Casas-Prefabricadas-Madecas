@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Budget, BudgetItem, Client, Project, HouseModel, Contract, CombinedModelModule } from '@/types';
+import { Budget, BudgetItem, Client, Project, HouseModel, Contract, CombinedModelModule, SelectedImprovement } from '@/types';
 import { 
   getBudgets, 
   saveBudget, 
@@ -14,6 +14,7 @@ import {
   getContracts
 } from '@/services/db';
 import { analyzeBudgetFile, suggestCubicacionAI } from '@/services/gemini';
+import { isBaseModelItem, normalizeBudgetItems, reconcileBudgetTotals } from '@/lib/contractMath';
 import { BudgetTable } from './budget/BudgetTable';
 import { 
   Plus, 
@@ -383,11 +384,8 @@ const BudgetManager: React.FC = () => {
         otherItems.splice(promoIdx, 1);
       }
 
-      const allItems = [...moduleItems, ...otherItems];
-      const totalAmount = allItems.reduce((sum, item) => sum + item.total, 0);
-      const adicAmount = otherItems
-        .filter(i => i.precio_unitario > 0)
-        .reduce((sum, item) => sum + item.total, 0);
+      const allItems = normalizeBudgetItems([...moduleItems, ...otherItems]);
+      const reconciled = reconcileBudgetTotals({ detalle_items: allItems, es_anexo: prev.es_anexo });
 
       return {
         ...prev,
@@ -395,10 +393,10 @@ const BudgetManager: React.FC = () => {
         modelos_combinados: newModules,
         superficie_m2: totalSurface,
         valor_m2: avgRate,
-        monto_base_modelo: totalBase,
+        monto_base_modelo: reconciled.baseSum,
         detalle_items: allItems,
-        monto_total: totalAmount,
-        monto_adicionales: adicAmount
+        monto_total: reconciled.itemsSum,
+        monto_adicionales: reconciled.adicSum
       };
     });
   };
@@ -570,15 +568,17 @@ const BudgetManager: React.FC = () => {
         items.splice(promoIdx, 1);
       }
 
-      const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
+      const normalizedItems = normalizeBudgetItems(items);
+      const reconciled = reconcileBudgetTotals({ detalle_items: normalizedItems, es_anexo: prev.es_anexo });
 
       return {
         ...prev,
         superficie_m2: newSurface,
         valor_m2: newRate,
-        monto_base_modelo: baseTotal,
-        detalle_items: items,
-        monto_total: totalAmount
+        monto_base_modelo: reconciled.baseSum,
+        monto_adicionales: reconciled.adicSum,
+        detalle_items: normalizedItems,
+        monto_total: reconciled.itemsSum
       };
     });
   };
@@ -678,16 +678,15 @@ const BudgetManager: React.FC = () => {
         items.splice(existingIdx, 1);
       }
 
-      const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
-      const adicAmount = items
-        .filter(i => !i.descripcion.includes('CASA MODELO') && i.precio_unitario > 0)
-        .reduce((sum, item) => sum + item.total, 0);
+      const normalizedItems = normalizeBudgetItems(items);
+      const reconciled = reconcileBudgetTotals({ detalle_items: normalizedItems, es_anexo: prev.es_anexo });
 
       return {
         ...prev,
-        detalle_items: items,
-        monto_total: totalAmount,
-        monto_adicionales: adicAmount
+        detalle_items: normalizedItems,
+        monto_base_modelo: reconciled.baseSum,
+        monto_total: reconciled.itemsSum,
+        monto_adicionales: reconciled.adicSum
       };
     });
   };
@@ -735,7 +734,7 @@ const BudgetManager: React.FC = () => {
         if (matchedAdic) {
           const cleanTitle = changedItem.descripcion
             .replace(`[${matchedAdic.codigo}]`, '')
-            .replace(/\(.*?\)/g, '')
+            .replace(/\s*\([^)]*m²[^)]*\/m²\)\s*$/i, '')
             .trim();
 
           setAdicionalesState(curr => ({
@@ -751,16 +750,15 @@ const BudgetManager: React.FC = () => {
         }
       }
 
-      const totalAmount = updated.reduce((sum, item) => sum + item.total, 0);
-      const adicAmount = updated
-        .filter(i => !i.descripcion.includes('CASA MODELO') && i.precio_unitario > 0)
-        .reduce((sum, item) => sum + item.total, 0);
+      const normalizedUpdated = normalizeBudgetItems(updated);
+      const reconciled = reconcileBudgetTotals({ detalle_items: normalizedUpdated, es_anexo: prev.es_anexo });
 
       return {
         ...prev,
-        detalle_items: updated,
-        monto_total: totalAmount,
-        monto_adicionales: adicAmount
+        detalle_items: normalizedUpdated,
+        monto_base_modelo: reconciled.baseSum,
+        monto_total: reconciled.itemsSum,
+        monto_adicionales: reconciled.adicSum
       };
     });
   };
@@ -811,16 +809,28 @@ const BudgetManager: React.FC = () => {
 
   // Add Custom Manual Item
   const handleAddCustomItem = () => {
-    if (!newItem.descripcion || newItem.precio_unitario < 0) return;
-    const total = newItem.cantidad * newItem.precio_unitario;
-    const itemToAdd: BudgetItem = { ...newItem, id: uuid(), total };
+    if (!newItem.descripcion.trim() || newItem.precio_unitario < 0) return;
+    const cantidad = Math.max(0.01, Number(newItem.cantidad) || 1);
+    const precio_unitario = Math.max(0, Math.round(Number(newItem.precio_unitario) || 0));
+    const total = Math.round(cantidad * precio_unitario);
+    const itemToAdd: BudgetItem = {
+      ...newItem,
+      descripcion: newItem.descripcion.trim(),
+      cantidad,
+      precio_unitario,
+      id: uuid(),
+      total
+    };
 
     setFormData(prev => {
-      const updated = [...prev.detalle_items, itemToAdd];
+      const updated = normalizeBudgetItems([...prev.detalle_items, itemToAdd]);
+      const reconciled = reconcileBudgetTotals({ detalle_items: updated, es_anexo: prev.es_anexo });
       return {
         ...prev,
         detalle_items: updated,
-        monto_total: updated.reduce((s, i) => s + i.total, 0)
+        monto_base_modelo: reconciled.baseSum,
+        monto_adicionales: reconciled.adicSum,
+        monto_total: reconciled.itemsSum
       };
     });
 
@@ -831,7 +841,7 @@ const BudgetManager: React.FC = () => {
   const handleRemoveItem = (id: string) => {
     setFormData(prev => {
       const itemToRemove = prev.detalle_items.find(i => i.id === id);
-      const updated = prev.detalle_items.filter(i => i.id !== id);
+      const updated = normalizeBudgetItems(prev.detalle_items.filter(i => i.id !== id));
 
       if (itemToRemove) {
         const matchedAdic = MADECAS_ADICIONALES.find(a => itemToRemove.descripcion.includes(`[${a.codigo}]`));
@@ -846,33 +856,53 @@ const BudgetManager: React.FC = () => {
         }
       }
 
-      const totalAmount = updated.reduce((s, i) => s + i.total, 0);
-      const adicAmount = updated
-        .filter(i => !i.descripcion.includes('CASA MODELO') && i.precio_unitario > 0)
-        .reduce((sum, item) => sum + item.total, 0);
+      const reconciled = reconcileBudgetTotals({ detalle_items: updated, es_anexo: prev.es_anexo });
 
       return {
         ...prev,
         detalle_items: updated,
-        monto_total: totalAmount,
-        monto_adicionales: adicAmount
+        monto_base_modelo: reconciled.baseSum,
+        monto_total: reconciled.itemsSum,
+        monto_adicionales: reconciled.adicSum
       };
     });
   };
 
   // Save Budget
-  const handleSave = async (e?: React.FormEvent) => {
+  const handleSave = async (e?: React.FormEvent): Promise<boolean> => {
     if (e) e.preventDefault();
 
     if (!formData.cliente_id) {
       window.dispatchEvent(new CustomEvent('app-notification', { 
         detail: { message: 'Por favor selecciona un cliente para el presupuesto.', type: 'info' } 
       }));
-      return;
+      return false;
     }
+
+    const normalizedItems = normalizeBudgetItems(formData.detalle_items);
+    const reconciled = reconcileBudgetTotals({ detalle_items: normalizedItems, es_anexo: formData.es_anexo });
+
+    const selectedImprovements: SelectedImprovement[] = MADECAS_ADICIONALES
+      .filter(a => adicionalesState[a.id]?.selected)
+      .map(a => {
+        const st = adicionalesState[a.id];
+        return {
+          improvement_id: a.id,
+          codigo: a.codigo,
+          titulo: st.titulo || a.titulo,
+          m2: Number(st.m2) || 0,
+          precio_m2: Math.round(Number(st.precio_m2) || 0),
+          total: Math.round(Number(st.total) || 0)
+        };
+      });
 
     const dataToSave: Budget = {
       ...formData,
+      detalle_items: normalizedItems,
+      monto_base_modelo: reconciled.baseSum,
+      monto_adicionales: reconciled.adicSum,
+      monto_total: reconciled.itemsSum,
+      mejoramientos_adicionales: selectedImprovements,
       es_combinacion_modelos: isMultiModelMode,
       modelos_combinados: isMultiModelMode ? combinedModules : undefined,
       proyecto_id: isMultiModelMode && combinedModules.length > 0 ? (formData.proyecto_id || combinedModules[0].model_id) : formData.proyecto_id
@@ -882,11 +912,12 @@ const BudgetManager: React.FC = () => {
       window.dispatchEvent(new CustomEvent('app-notification', { 
         detail: { message: 'Por favor selecciona un modelo de casa.', type: 'info' } 
       }));
-      return;
+      return false;
     }
 
     try {
       await saveBudget(dataToSave);
+      setFormData(dataToSave);
       setIsEditing(false);
 
       // Update client stage
@@ -901,17 +932,20 @@ const BudgetManager: React.FC = () => {
       window.dispatchEvent(new CustomEvent('app-notification', { 
         detail: { message: 'Presupuesto guardado correctamente.', type: 'success' } 
       }));
+      return true;
     } catch (err) {
       console.error("Error saving budget:", err);
       window.dispatchEvent(new CustomEvent('app-notification', { 
         detail: { message: 'Error al guardar el presupuesto.', type: 'error' } 
       }));
+      return false;
     }
   };
 
   // Generate Contract or Anexo with this Budget
   const handleProceedToContract = async () => {
-    await handleSave();
+    const saved = await handleSave();
+    if (!saved) return;
     window.localStorage.setItem('pending_contract_budget_id', formData.id);
     if (formData.es_anexo && formData.parent_contract_id) {
       window.localStorage.setItem('pending_anexo_contract_id', formData.parent_contract_id);
@@ -1029,10 +1063,15 @@ const BudgetManager: React.FC = () => {
   const selectedClient = clients.find(c => c.id === formData.cliente_id);
 
   if (isEditing) {
-    const calculatedBaseTotal = formData.es_anexo ? 0 : Math.round((formData.superficie_m2 || 36) * valorM2Input);
-    const calculatedAdicionalesTotal = formData.detalle_items
-      .filter(i => !i.descripcion.includes('CASA MODELO') && i.precio_unitario > 0)
-      .reduce((sum, item) => sum + item.total, 0);
+    const liveReconciled = reconcileBudgetTotals(formData);
+    const calculatedBaseTotal = formData.es_anexo
+      ? 0
+      : (liveReconciled.baseSum > 0
+          ? liveReconciled.baseSum
+          : (isMultiModelMode
+              ? combinedModules.reduce((s, m) => s + m.subtotal, 0)
+              : Math.round((formData.superficie_m2 || 36) * valorM2Input)));
+    const calculatedAdicionalesTotal = liveReconciled.adicSum;
 
     return (
       <div className="max-w-5xl mx-auto bg-white p-6 md:p-8 rounded-2xl shadow-lg border border-slate-200 animate-in slide-in-from-bottom-4 duration-200 space-y-6">

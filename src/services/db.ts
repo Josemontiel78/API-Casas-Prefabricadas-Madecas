@@ -17,6 +17,23 @@ import {
 } from 'firebase/firestore';
 
 // --- Helpers ---
+const sanitizeForFirestore = <T>(val: T): T => {
+  if (val === undefined) return undefined as any;
+  if (val === null || typeof val !== 'object') return val;
+  if (Array.isArray(val)) {
+    return val
+      .map(item => sanitizeForFirestore(item))
+      .filter(item => item !== undefined) as unknown as T;
+  }
+  const result: Record<string, any> = {};
+  for (const [k, v] of Object.entries(val as Record<string, any>)) {
+    if (v !== undefined) {
+      result[k] = sanitizeForFirestore(v);
+    }
+  }
+  return result as T;
+};
+
 const COLLECTIONS = {
   CLIENTS: 'clients',
   PROJECTS: 'projects',
@@ -58,9 +75,7 @@ export const getClients = async (): Promise<Client[]> => {
 export const saveClient = async (client: Client, actor?: { id: string; nombre: string }): Promise<void> => {
   try {
     const docRef = doc(db, COLLECTIONS.CLIENTS, client.id);
-    const sanitizedData = Object.fromEntries(
-      Object.entries(client).filter(([_, v]) => v !== undefined)
-    );
+    const sanitizedData = sanitizeForFirestore(client);
     const data = {
       ...sanitizedData,
       vendedor_id: client.vendedor_id || 'system'
@@ -119,9 +134,7 @@ export const getProjects = async (): Promise<Project[]> => {
 export const saveProject = async (project: Project): Promise<void> => {
   try {
     const docRef = doc(db, COLLECTIONS.PROJECTS, project.id);
-    const sanitizedData = Object.fromEntries(
-      Object.entries(project).filter(([_, v]) => v !== undefined)
-    );
+    const sanitizedData = sanitizeForFirestore(project);
     const data = {
       ...sanitizedData,
       vendedor_id: project.vendedor_id || 'system'
@@ -155,9 +168,7 @@ export const getBudgets = async (): Promise<Budget[]> => {
 export const saveBudget = async (budget: Budget): Promise<void> => {
   try {
     const docRef = doc(db, COLLECTIONS.BUDGETS, budget.id);
-    const sanitizedData = Object.fromEntries(
-      Object.entries(budget).filter(([_, v]) => v !== undefined)
-    );
+    const sanitizedData = sanitizeForFirestore(budget);
     const data = {
       ...sanitizedData,
       vendedor_id: budget.vendedor_id || 'system'
@@ -196,10 +207,8 @@ export const saveContract = async (contract: Contract): Promise<void> => {
   try {
     const docRef = doc(db, COLLECTIONS.CONTRACTS, contract.id);
     
-    // Remove undefined fields to prevent Firestore errors
-    const sanitizedData = Object.fromEntries(
-      Object.entries(contract).filter(([_, v]) => v !== undefined)
-    );
+    // Recursively remove undefined fields (including inside snapshots) to prevent Firestore errors
+    const sanitizedData = sanitizeForFirestore(contract);
 
     const data = {
       ...sanitizedData,
@@ -249,9 +258,7 @@ export const getHouseModels = async (): Promise<HouseModel[]> => {
 export const saveHouseModel = async (model: HouseModel): Promise<void> => {
   try {
     const docRef = doc(db, COLLECTIONS.HOUSE_MODELS, model.id);
-    const sanitizedData = Object.fromEntries(
-      Object.entries(model).filter(([_, v]) => v !== undefined)
-    );
+    const sanitizedData = sanitizeForFirestore(model);
     await setDoc(docRef, sanitizedData, { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, COLLECTIONS.HOUSE_MODELS);
