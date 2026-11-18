@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import ClientManager from '@/components/ClientManager';
@@ -13,13 +12,24 @@ import VendorSettings from '@/components/VendorSettings';
 import CubicacionManager from '@/components/CubicacionManager';
 import DesignGallery from '@/components/DesignGallery';
 import UserManager from '@/components/UserManager';
-import Login from '@/components/Login';
+import QuotationTracking from '@/components/QuotationTracking';
+import ContractAlertsView from '@/components/ContractAlertsView';
+import SmartView from '@/components/SmartView';
 import { ViewState, UserRole } from '@/types';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [role, setRole] = useState<UserRole>('vendedor');
   const [loading, setLoading] = useState(true);
+  const [isSmartMode, setIsSmartMode] = useState<boolean>(() => {
+    return localStorage.getItem('crm_mode') === 'smart';
+  });
+
+  const handleToggleSmartMode = (smart: boolean) => {
+    setIsSmartMode(smart);
+    localStorage.setItem('crm_mode', smart ? 'smart' : 'original');
+    setCurrentView('dashboard');
+  };
 
   useEffect(() => {
     const handleViewChange = (e: any) => {
@@ -29,7 +39,7 @@ const App: React.FC = () => {
     };
 
     window.addEventListener('app-view-change', handleViewChange);
-    setLoading(false); // No longer waiting for auth
+    setLoading(false);
     return () => {
       window.removeEventListener('app-view-change', handleViewChange);
     };
@@ -44,8 +54,20 @@ const App: React.FC = () => {
   }
 
   const renderContent = () => {
+    if (isSmartMode && currentView === 'dashboard') {
+      return (
+        <SmartView
+          onNavigate={(view) => setCurrentView(view)}
+          onOpenAlerts={() => window.dispatchEvent(new CustomEvent('open-contract-alerts-modal'))}
+          onSwitchToOriginal={() => handleToggleSmartMode(false)}
+        />
+      );
+    }
+
     switch (currentView) {
       case 'dashboard': return <Dashboard />;
+      case 'tracking': return <QuotationTracking />;
+      case 'alerts': return <ContractAlertsView onNavigate={(view) => setCurrentView(view)} />;
       case 'hub': return <CommercialHub />;
       case 'map': return <ProjectMapOverview />;
       case 'clients': return <ClientManager />;
@@ -63,11 +85,13 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout 
-      currentView={currentView} 
+    <Layout
+      currentView={currentView}
       setView={setCurrentView}
       role={role}
       setRole={setRole}
+      isSmartMode={isSmartMode}
+      onToggleSmartMode={handleToggleSmartMode}
     >
       {renderContent()}
     </Layout>

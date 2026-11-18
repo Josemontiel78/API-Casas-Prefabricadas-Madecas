@@ -27,6 +27,13 @@ export interface Client {
   comuna?: string;
   region?: string;
   superficie_terreno_m2?: number;
+  lead_score?: 'Alta' | 'Media' | 'Baja';
+  descartado?: boolean;
+  fecha_descarte?: string;
+  motivo_descarte?: string;
+  detalle_descarte?: string;
+  descartado_por?: { id: string; nombre: string; rol: string };
+  ultima_interaccion?: string;
 }
 
 export interface SystemUser {
@@ -57,6 +64,9 @@ export type AuditAction =
   | 'CLIENTE_ELIMINADO'
   | 'PRESUPUESTO_CREADO'
   | 'PRESUPUESTO_MODIFICADO'
+  | 'PRESUPUESTO_DESCARTADO'
+  | 'PRESUPUESTO_REACTIVADO'
+  | 'SEGUIMIENTO_REGISTRADO'
   | 'CONTRATO_CREADO'
   | 'CONTRATO_FIRMADO';
 
@@ -163,6 +173,16 @@ export interface Budget {
   // Multi-model combination support
   es_combinacion_modelos?: boolean;
   modelos_combinados?: CombinedModelModule[];
+
+  // Quotation Tracking & Follow-up
+  descartado?: boolean;
+  fecha_descarte?: string;
+  motivo_descarte?: string;
+  detalle_descarte?: string;
+  descartado_por?: { id: string; nombre: string; rol: string };
+  lead_score?: 'Alta' | 'Media' | 'Baja';
+  ultima_interaccion?: string;
+  alertas_estancamiento_vistas?: boolean;
 }
 
 export interface PaymentInstallment {
@@ -269,7 +289,39 @@ export interface HouseModel {
   fecha_creacion: string;
 }
 
+// Contract Execution and Payment Alert
+export interface ContractAlert {
+  id: string;
+  contract_id: string;
+  cliente_id?: string;
+  cliente_nombre: string;
+  cliente_telefono?: string;
+  tipo: 'entrega_vencida' | 'entrega_urgente' | 'entrega_proxima' | 'inicio_pendiente' | 'cuota_impaga';
+  titulo: string;
+  detalle: string;
+  dias_restantes: number;
+  severidad: 'urgente' | 'alerta' | 'normal';
+  fecha_referencia: string;
+  monto_referencia?: number;
+}
+
 // Helper type for views
-export type ViewState = 'dashboard' | 'hub' | 'map' | 'clients' | 'projects' | 'budgets' | 'contracts' | 'settings' | 'ai-assistant' | 'cubicacion' | 'designs' | 'users' | 'audit';
+export type ViewState = 
+  | 'dashboard' 
+  | 'hub' 
+  | 'map' 
+  | 'clients' 
+  | 'projects' 
+  | 'budgets' 
+  | 'contracts' 
+  | 'settings' 
+  | 'ai-assistant' 
+  | 'cubicacion' 
+  | 'designs' 
+  | 'users' 
+  | 'audit'
+  | 'tracking'
+  | 'alerts';
+
 export type UserRole = 'vendedor' | 'admin';
 
